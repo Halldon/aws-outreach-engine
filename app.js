@@ -1490,6 +1490,7 @@ function campaignDetailPage(id) {
     index < Math.min(4, Math.max(1, Math.round(campaign.prospects / 800)))
   );
   const nextApprovals = state.approvals.filter((approval) => approval.campaignId === campaign.id);
+  const apifyCampaignHref = `#/connect-apify?campaign=${encodeURIComponent(campaign.id)}`;
 
   return workspacePage(
     "campaigns",
@@ -1513,7 +1514,13 @@ function campaignDetailPage(id) {
         <div class="toolbar campaign-actions" style="margin-top: 14px;">
           <button class="btn ${isActive ? "btn-ghost" : "btn-primary"}" data-action="toggle-campaign" data-id="${campaign.id}" data-status="${nextCampaignStatus}">${campaignActionLabel}</button>
           <button class="btn" data-action="duplicate-campaign" data-id="${campaign.id}">Duplicate campaign</button>
+          <a class="btn btn-primary" href="${apifyCampaignHref}">Run Apify Actor</a>
           <a class="btn btn-primary" href="#/workspace/${state.workspace.id}/messages/inbox?campaign=${campaign.id}">Open campaign inbox</a>
+        </div>
+        <div class="campaign-next-step">
+          <strong>Need fresh prospects?</strong>
+          <span>Run an Apify Actor, then import the top signal back into this campaign inbox.</span>
+          <a class="btn btn-ghost" href="${apifyCampaignHref}">Open Apify runner</a>
         </div>
       </section>
       <section class="panel">
@@ -1533,7 +1540,7 @@ function campaignDetailPage(id) {
                   <span class="status-pill ${prospect.statusType === "warn" ? "warn" : "active"}">${prospect.score}</span>
                 </div>`
             )
-            .join("") || '<div class="muted small">No assigned prospects yet.</div>'}
+            .join("") || `<div class="muted small">No assigned prospects yet. <a href="${apifyCampaignHref}">Run Apify Actor</a> to import live-data prospects.</div>`}
         </div>
       </section>
       <section class="panel">
@@ -1554,7 +1561,7 @@ function campaignDetailPage(id) {
                   <span class="reply-chip gray">${message.status}</span>
                 </div>`
             )
-            .join("") || '<div class="muted small">No campaign messages yet.</div>'}
+            .join("") || `<div class="muted small">No campaign messages yet. <a href="${apifyCampaignHref}">Run Apify Actor</a>, then import the top signal.</div>`}
         </div>
       </section>
     </div>`
@@ -2408,10 +2415,12 @@ function renderApifySignalCards(state) {
     .join("");
 }
 
-function connectApifyPage() {
+function connectApifyPage(query = new URLSearchParams()) {
   const state = getAppState();
   const connected = !!state.integrations.apify;
   const run = state.apifyRun || {};
+  const campaignId = query?.get("campaign") || "";
+  const campaign = campaignId ? state.campaigns.find((item) => item.id === campaignId) : null;
   const selectedActor = run.actorId || apifyActorOptions[0].id;
   const selectedActorConfig = apifyActorOptions.find((actor) => actor.id === selectedActor) || apifyActorOptions[0];
   const target = run.target || APIFY_DEFAULT_TARGET;
@@ -2429,13 +2438,13 @@ function connectApifyPage() {
       <div class="panel apify-connect-shell">
         <div class="topbar">
           ${renderLogo()}
-          <a class="btn" href="#/workspace/${state.workspace.id}/dashboard">Back to workspace</a>
+          <a class="btn" href="${campaign ? `#/workspace/${state.workspace.id}/campaigns/${campaign.id}` : `#/workspace/${state.workspace.id}/dashboard`}">Back to ${campaign ? "campaign" : "workspace"}</a>
         </div>
         <div class="apify-connect-hero">
           <div>
             <span class="eyebrow">Apify live web data</span>
             <h1>Data connector</h1>
-            <p class="muted">Run an Apify Actor, pull default dataset rows into this workspace, score the signals, and unlock campaign actions from the same flow.</p>
+            <p class="muted">Run an Apify Actor, pull default dataset rows into this workspace, score the signals, and unlock campaign actions from the same flow.${campaign ? ` This run is staged for ${attrSafe(campaign.name)}.` : ""}</p>
           </div>
           <div class="apify-status-stack">
             <span class="chip ${connected ? "active" : ""}">${connected ? "Connected" : "Disconnected"}</span>
@@ -2475,7 +2484,7 @@ function connectApifyPage() {
             <span>Pages</span>
             <input name="maxPages" type="number" min="1" max="5" value="${Math.min(5, Math.max(1, Number(run.maxPages || 1)))}" />
           </label>
-          <button class="btn btn-primary" id="run-apify-crawl" type="submit">Run live Actor</button>
+          <button class="btn btn-primary" id="run-apify-crawl" type="submit">Run Apify Actor</button>
         </form>
 
         <div class="apify-link-row">
@@ -2496,7 +2505,7 @@ function connectApifyPage() {
             <h3>Dataset signals</h3>
             <div class="small muted">${run.lastRunAt ? `Last live run ${attrSafe(run.lastRunAt)}` : "Run the Actor to replace these seeded examples with live Apify rows."}</div>
           </div>
-          <button class="btn btn-ghost" data-action="import-prospect">Import top signal</button>
+          <button class="btn btn-ghost" data-action="import-prospect" data-campaign-id="${attrSafe(campaignId)}">Import top signal${campaign ? " to campaign" : ""}</button>
         </div>
         <div class="apify-signal-grid">
           ${renderApifySignalCards(state)}
@@ -2506,8 +2515,8 @@ function connectApifyPage() {
   `;
 }
 
-function connectServicePage(provider = "hubspot") {
-  if (provider === "apify") return connectApifyPage();
+function connectServicePage(provider = "hubspot", query = new URLSearchParams()) {
+  if (provider === "apify") return connectApifyPage(query);
 
   const state = getAppState();
   const providers = {
@@ -2745,7 +2754,7 @@ function render() {
       content = renderWorkspaceSection(routeData.section, query);
       break;
     case "connect-service":
-      content = connectServicePage(routeData.provider);
+      content = connectServicePage(routeData.provider, query);
       break;
     case "auth":
       content = authPage(routeData.provider, routeData.action);
@@ -2990,11 +2999,17 @@ function handleWarmListSubmit(form) {
   setHash(`/workspace/${currentWorkspaceId()}/prospects/warm-lists`);
 }
 
-function handleProspectImport() {
+function handleProspectImport(campaignId = "") {
+  let campaignName = "";
   updateState((draft) => {
     const signal = (draft.apifySignals || sampleApifySignals)[0] || sampleApifySignals[0];
     const id = `p_${Date.now()}`;
     const name = `${signal.company} Signal`;
+    const targetCampaign =
+      draft.campaigns.find((campaign) => campaign.id === campaignId) ||
+      draft.campaigns[0] ||
+      null;
+    campaignName = targetCampaign?.name || "";
     draft.prospects.unshift({
       id,
       name,
@@ -3015,8 +3030,11 @@ function handleProspectImport() {
       last: "just now",
       template: "Live signal opener",
       body: `Saw fresh activity around ${signal.title}. Worth a short, personalized outreach sequence.`,
-      campaignId: draft.campaigns[0]?.id || "cmp_01",
+      campaignId: targetCampaign?.id || "cmp_01",
     });
+    if (targetCampaign) {
+      targetCampaign.prospects = Number(targetCampaign.prospects || 0) + 1;
+    }
     draft.activity = {
       ...INITIAL_STATE.activity,
       ...(draft.activity || {}),
@@ -3024,7 +3042,7 @@ function handleProspectImport() {
       agentActionsSent: Number(draft.activity?.agentActionsSent || 0) + 1,
     };
   });
-  flash("Live-data prospect imported");
+  flash(`Live-data prospect imported${campaignName ? ` to ${campaignName}` : ""}`);
   render();
 }
 
@@ -3067,7 +3085,7 @@ async function runApifyActor(form, button) {
   const actorId = form?.querySelector("[name='actorId']")?.value || apifyActorOptions[0].id;
   const target = form?.querySelector("[name='target']")?.value.trim() || APIFY_DEFAULT_TARGET;
   const maxPages = form?.querySelector("[name='maxPages']")?.value || 1;
-  const previousText = button?.textContent || "Run live Actor";
+  const previousText = button?.textContent || "Run Apify Actor";
 
   if (button) {
     button.disabled = true;
@@ -3681,7 +3699,7 @@ function bindActions() {
       }
 
       if (action === "import-prospect") {
-        handleProspectImport();
+        handleProspectImport(btn.getAttribute("data-campaign-id") || "");
         return;
       }
     };

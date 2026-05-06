@@ -1660,6 +1660,27 @@ button[type="submit"] {
   align-items: center;
 }
 
+.campaign-next-step {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #dfe5ed;
+  border-radius: 6px;
+  background: #fbfcfd;
+  color: #4b5563;
+}
+
+.campaign-next-step strong {
+  color: #111827;
+}
+
+.campaign-next-step .btn {
+  margin-left: auto;
+}
+
 .prospect-table .row {
   flex-wrap: nowrap;
 }
