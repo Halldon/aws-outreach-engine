@@ -224,11 +224,17 @@ const assertWorkspaceRecovery = async (page, workspaceId, route, heading, backHr
       await page.fill('input[name="message"]', 'Test opener');
       await page.fill('input[name="goal"]', '15%');
       await page.click('button[type="submit"]');
-      await page.waitForTimeout(250);
+      await page.waitForURL(/#\/workspace\/[^/]+\/campaigns\/cmp_[^/]+$/, { timeout: 8000 }).catch(() => {
+        errors.push({ type: 'routing', message: 'Campaign creation should redirect to the new detail route before Apify data import.' });
+      });
+      const draftText = (await page.textContent('body')) || '';
+      if (!draftText.includes('Test campaign') || !draftText.includes('Run Apify Actor')) {
+        errors.push({ type: 'logic', message: 'Created campaign should render a clear Run Apify Actor next step.' });
+      }
       await page.goto(`${APP_URL}/#/workspace/${workspaceId}/campaigns`, { waitUntil: 'domcontentloaded' });
       const countAfter = await getCampaignCount(page);
-      if (countAfter > countBefore) {
-        errors.push({ type: 'logic', message: 'Campaign should not create before Apify data connector is connected' });
+      if (!(countAfter > countBefore)) {
+        errors.push({ type: 'logic', message: 'Campaign should create before Apify data import so the demo flow can continue.' });
       }
       await page.goto(`${APP_URL}/#/workspace/${workspaceId}/campaigns/create`, { waitUntil: 'domcontentloaded' });
     }

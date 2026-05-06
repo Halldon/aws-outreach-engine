@@ -1581,7 +1581,7 @@ function campaignsCreatePage() {
         ${field("audience", "Audience tag", "apify_profile_visitors")}
         ${field("message", "Primary opener", "Hey {{first_name}}, noticed you...")}
         ${field("goal", "Reply goal", "30%")}
-        <button class="btn btn-primary" type="submit" style="margin-top: 6px;">Save draft</button>
+        <button class="btn btn-primary" type="submit" style="margin-top: 6px;">Create campaign</button>
       </form>
     </div>`
   );
@@ -2018,7 +2018,7 @@ function messageDetailPage(messageId) {
       <div class="toolbar">
         <h3>Message for ${message.prospect}</h3>
         <span class="chip">${message.channel}</span>
-        <span class="status-pill ${message.folder === "inbox" ? "warn" : "active"}">${message.folder}</span>
+        <span class="status-pill ${message.folder === "inbox" ? "warn" : "active"}">${message.status}</span>
       </div>
       <p class="muted">Template: ${message.template}</p>
       <div class="list-item message-detail">${message.body}</div>
@@ -2844,8 +2844,6 @@ function handleApprovalDecision(id, decision) {
 }
 
 function handleCampaignToggle(campaignId, nextStatus) {
-  if (!assertApifyConnected("Campaign status updates")) return;
-
   updateState((draft) => {
     const campaign = draft.campaigns.find((item) => item.id === campaignId);
     if (!campaign) return;
@@ -3010,6 +3008,7 @@ function handleProspectImport(campaignId = "") {
       draft.campaigns[0] ||
       null;
     campaignName = targetCampaign?.name || "";
+    draft.integrations.apify = true;
     draft.prospects.unshift({
       id,
       name,
@@ -3043,6 +3042,10 @@ function handleProspectImport(campaignId = "") {
     };
   });
   flash(`Live-data prospect imported${campaignName ? ` to ${campaignName}` : ""}`);
+  if (campaignId) {
+    setHash(`/workspace/${currentWorkspaceId()}/messages/inbox?campaign=${encodeURIComponent(campaignId)}`);
+    return;
+  }
   render();
 }
 
@@ -3152,6 +3155,7 @@ async function runApifyActor(form, button) {
     updateState((draft) => {
       draft.apifySignals = sampleApifySignals;
       draft.apifySampleLoaded = true;
+      draft.integrations.apify = true;
       draft.apifyRun = {
         ...(draft.apifyRun || INITIAL_STATE.apifyRun),
         actorId,
@@ -3266,8 +3270,6 @@ function handleSeatRemove(id) {
 }
 
 function handleCampaignCreate(form) {
-  if (!assertApifyConnected("Campaign creation")) return;
-
   const name = form.querySelector("[name='name']").value.trim() || "Untitled Campaign";
   const audience = form.querySelector("[name='audience']").value.trim() || "Manual";
   const message = form.querySelector("[name='message']").value.trim() || "Hello";
