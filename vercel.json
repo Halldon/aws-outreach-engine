@@ -1,0 +1,15 @@
+{
+  "functions": {
+    "api/apify/run.js": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    { "source": "/login", "destination": "/index.html" },
+    { "source": "/signup", "destination": "/index.html" },
+    { "source": "/reset-password", "destination": "/index.html" },
+    { "source": "/setup-account/(.*)", "destination": "/index.html" },
+    { "source": "/workspace/(.*)", "destination": "/index.html" },
+    { "source": "/connect-apify", "destination": "/index.html" }
+  ]
+}

@@ -1,0 +1,8 @@
+node_modules/
+.playwright-mcp/
+.vercel/
+.env
+.env.*
+*.log
+*.tgz
+.DS_Store
