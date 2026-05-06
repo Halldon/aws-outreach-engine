@@ -865,11 +865,6 @@ function workspacePage(route, session, content, options = {}) {
               </div>
               <a class="create-campaign-btn" href="#/workspace/${workspace.id}/campaigns/create">+ Create Campaign</a>
               ${nav}
-              <div class="setup-toast">
-                <div class="setup-check">✓</div>
-                <strong>You're all set</strong>
-                <span>Your workspace is fully configured. Automation is working for you.</span>
-              </div>
               <a class="setup-card" href="#/setup-account/setup-company">
                 <span class="setup-ring"></span>
                 <span><strong>Account setup</strong><small>9/9 steps completed</small></span>
@@ -885,7 +880,6 @@ function workspacePage(route, session, content, options = {}) {
           </main>
         </div>
       </div>
-      <div class="outreach-engine-footer"></div>
     </div>
   `;
 }
