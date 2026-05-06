@@ -1433,21 +1433,30 @@ function campaignsPage() {
   const state = getAppState();
   const rows = state.campaigns.map((c) => [
     `<a href="#/workspace/${state.workspace.id}/campaigns/${c.id}">${c.name}</a>`,
-    c.status,
+    `<span class="status-pill ${c.status.toLowerCase() === "active" ? "active" : "warn"}">${c.status}</span>`,
     c.prospects,
     c.sent,
     c.replies,
     c.scope,
+    `<div class="table-actions">
+      <a class="btn btn-ghost" href="#/workspace/${state.workspace.id}/campaigns/${c.id}">Open</a>
+      <button class="btn ${c.status.toLowerCase() === "active" ? "btn-ghost" : "btn-primary"}" data-action="toggle-campaign" data-id="${c.id}" data-status="${c.status.toLowerCase() === "active" ? "Paused" : "Active"}">${c.status.toLowerCase() === "active" ? "Pause" : "Launch"}</button>
+      <a class="btn btn-primary" href="#/workspace/${state.workspace.id}/messages/inbox?campaign=${c.id}">Inbox</a>
+    </div>`,
   ]);
+  const draftCount = state.campaigns.filter((campaign) => campaign.status.toLowerCase() === "draft").length;
   return workspacePage(
     "campaigns",
     session,
     `<div class="panel" style="margin-top:16px;">
       <div class="toolbar">
-        <h3>Campaigns</h3>
+        <div>
+          <h3>Campaigns</h3>
+          <div class="small muted">${draftCount ? `${draftCount} draft campaign${draftCount === 1 ? "" : "s"} ready to launch.` : "Open an active campaign inbox to review messages."}</div>
+        </div>
         <button class="btn btn-primary" id="new-campaign">Create campaign</button>
       </div>
-      ${genericTable(rows, ["Campaign", "Status", "Prospects", "Sent", "Replies", "Scope"])}
+      ${genericTable(rows, ["Campaign", "Status", "Prospects", "Sent", "Replies", "Scope", "Next step"])}
     </div>`
   );
 }
@@ -1502,7 +1511,7 @@ function campaignDetailPage(id) {
           ${metricCard("Pending approvals", nextApprovals.length)}
         </div>
         <div class="toolbar campaign-actions" style="margin-top: 14px;">
-          <button class="btn" data-action="toggle-campaign" data-id="${campaign.id}" data-status="${nextCampaignStatus}">${campaignActionLabel}</button>
+          <button class="btn ${isActive ? "btn-ghost" : "btn-primary"}" data-action="toggle-campaign" data-id="${campaign.id}" data-status="${nextCampaignStatus}">${campaignActionLabel}</button>
           <button class="btn" data-action="duplicate-campaign" data-id="${campaign.id}">Duplicate campaign</button>
           <a class="btn btn-primary" href="#/workspace/${state.workspace.id}/messages/inbox?campaign=${campaign.id}">Open campaign inbox</a>
         </div>
