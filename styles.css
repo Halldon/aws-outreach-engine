@@ -283,22 +283,6 @@ textarea {
   font-weight: 500;
 }
 
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-}
-
-.brand-mark img {
-  display: block;
-  width: 34px;
-  height: 34px;
-  object-fit: contain;
-}
-
 .brand-name {
   font-size: 1rem;
   font-weight: 600;
@@ -1795,29 +1779,10 @@ button[type="submit"] {
 
 .workspace-switcher {
   display: grid;
-  grid-template-columns: 34px 1px 32px minmax(0, 1fr) 18px;
+  grid-template-columns: 32px minmax(0, 1fr) 18px;
   align-items: center;
   gap: 10px;
   min-height: 42px;
-}
-
-.workspace-logo-mark {
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.workspace-logo-mark img {
-  width: 32px;
-  height: 30px;
-}
-
-.workspace-separator {
-  width: 1px;
-  height: 24px;
-  background: #d7d7d7;
 }
 
 .workspace-avatar.dark {

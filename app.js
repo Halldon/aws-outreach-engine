@@ -735,10 +735,6 @@ function currentWorkspaceId() {
 function renderLogo() {
   return `
     <div class="inline-flex items-center gap-2">
-      <span class="brand-mark">
-        <img src="assets/logo-crown.svg" alt="${APP_NAME} crown" />
-        <img class="arrow" src="assets/logo-arrow.svg" alt="${APP_NAME} arrow" />
-      </span>
       <span class="font-semibold">${APP_NAME}</span>
     </div>
   `;
@@ -863,10 +859,6 @@ function workspacePage(route, session, content, options = {}) {
           <aside class="workspace-sidebar sticky top-0 z-50 transition-all duration-300 h-dvh overflow-y-scroll bg-[#F2F2F2] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <div class="p-2 lg:p-3">
               <div class="workspace-switcher">
-                <span class="workspace-logo-mark">
-                  <img src="logo.svg" alt="${APP_NAME}" />
-                </span>
-                <span class="workspace-separator"></span>
                 <span class="workspace-avatar dark">${secondInitial || firstInitial}<span class="status-dot"></span></span>
                 <div class="workspace-name">${workspace.name}</div>
                 <span class="workspace-chevron">⌄</span>
