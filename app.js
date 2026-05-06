@@ -13,6 +13,7 @@ const APIFY_CONSOLE_URL = "https://console.apify.com/actors";
 const APIFY_DOCS_URL = "https://docs.apify.com/llms.txt";
 const APIFY_RESOURCE_URL = "https://apify.notion.site/hackathon-may-sf#357f39950a22800b852ec1f4b3dc5123";
 const APIFY_DEFAULT_TARGET = "https://apify.com/store";
+const APIFY_RUN_TIMEOUT_MS = 45000;
 const apifyActorOptions = [
   {
     id: "apify/website-content-crawler",
@@ -1227,7 +1228,7 @@ function normalizeApifyRows(rows) {
   });
 }
 
-function buildApifyInput(actorId, target, maxPages = 2) {
+function buildApifyInput(actorId, target, maxPages = 1) {
   const trimmedTarget = (target || APIFY_DEFAULT_TARGET).trim();
   if (actorId === "apify/google-search-scraper") {
     return {
@@ -1241,7 +1242,7 @@ function buildApifyInput(actorId, target, maxPages = 2) {
   if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
   return {
     startUrls: [{ url }],
-    maxCrawlPages: Math.min(5, Math.max(1, Number(maxPages) || 2)),
+    maxCrawlPages: Math.min(5, Math.max(1, Number(maxPages) || 1)),
   };
 }
 
@@ -2482,7 +2483,7 @@ function connectApifyPage() {
           </label>
           <label class="field apify-pages-field">
             <span>Pages</span>
-            <input name="maxPages" type="number" min="1" max="5" value="2" />
+            <input name="maxPages" type="number" min="1" max="5" value="${Math.min(5, Math.max(1, Number(run.maxPages || 1)))}" />
           </label>
           <button class="btn btn-primary" id="run-apify-crawl" type="submit">Run live Actor</button>
         </form>
@@ -3075,7 +3076,7 @@ async function refreshApifyStatus(statusNode) {
 async function runApifyActor(form, button) {
   const actorId = form?.querySelector("[name='actorId']")?.value || apifyActorOptions[0].id;
   const target = form?.querySelector("[name='target']")?.value.trim() || APIFY_DEFAULT_TARGET;
-  const maxPages = form?.querySelector("[name='maxPages']")?.value || 2;
+  const maxPages = form?.querySelector("[name='maxPages']")?.value || 1;
   const previousText = button?.textContent || "Run live Actor";
 
   if (button) {
@@ -3093,10 +3094,14 @@ async function runApifyActor(form, button) {
     };
   });
 
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), APIFY_RUN_TIMEOUT_MS);
+
   try {
     const response = await fetch("/api/apify/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         actorId,
         input: buildApifyInput(actorId, target, maxPages),
@@ -3115,6 +3120,7 @@ async function runApifyActor(form, button) {
         ...(draft.apifyRun || INITIAL_STATE.apifyRun),
         actorId,
         target,
+        maxPages: Math.min(5, Math.max(1, Number(maxPages) || 1)),
         status: "success",
         lastRunAt: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
         lastItemCount: normalizedRows.length,
@@ -3131,6 +3137,10 @@ async function runApifyActor(form, button) {
     flash(`Apify Actor returned ${normalizedRows.length} dataset rows.`);
     render();
   } catch (error) {
+    const message =
+      error.name === "AbortError"
+        ? "Apify Actor run took longer than 45 seconds."
+        : error.message;
     updateState((draft) => {
       draft.apifySignals = sampleApifySignals;
       draft.apifySampleLoaded = true;
@@ -3138,15 +3148,17 @@ async function runApifyActor(form, button) {
         ...(draft.apifyRun || INITIAL_STATE.apifyRun),
         actorId,
         target,
+        maxPages: Math.min(5, Math.max(1, Number(maxPages) || 1)),
         status: "sample",
         lastItemCount: sampleApifySignals.length,
-        tokenConfigured: error.message.includes("Missing APIFY_TOKEN") ? false : draft.apifyRun?.tokenConfigured ?? null,
-        error: `${error.message} Sample dataset is loaded so the demo can continue.`,
+        tokenConfigured: message.includes("Missing APIFY_TOKEN") ? false : draft.apifyRun?.tokenConfigured ?? null,
+        error: `${message} Sample dataset is loaded so the demo can continue.`,
       };
     });
-    flash(`${error.message} Sample dataset loaded.`);
+    flash(`${message} Sample dataset loaded.`);
     render();
   } finally {
+    window.clearTimeout(timeoutId);
     if (button) {
       button.disabled = false;
       button.textContent = previousText;
@@ -3304,6 +3316,7 @@ function handleStudioSubmit(form) {
   });
   flash("Studio draft saved");
   setHash(`/workspace/${currentWorkspaceId()}/studio`);
+  render();
 }
 
 function bindActions() {
@@ -3446,7 +3459,7 @@ function bindActions() {
           const values = {
             "[name='actorId']": { value: apifyActorOptions[0].id },
             "[name='target']": { value: APIFY_DEFAULT_TARGET },
-            "[name='maxPages']": { value: 2 },
+            "[name='maxPages']": { value: 1 },
           };
           return values[selector] || null;
         },
