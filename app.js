@@ -1311,11 +1311,9 @@ function dashboardPage() {
           <h1>Welcome ${firstName} 👋</h1>
         </div>
         <div class="dashboard-actions">
-          <span class="gift-tile">□</span>
           <a class="connected-pill ${state.integrations.apify ? "active" : "pending"}" href="#/connect-apify">✓ ${state.integrations.apify ? "Apify Connected" : "Apify Ready"}</a>
           <span class="limit-pill">⌁ 25/day</span>
           <span class="limit-pill">✉ 30/day</span>
-          <button class="icon-button" aria-label="More options">⋮</button>
         </div>
       </div>
       <div class="dashboard-metric-row">
@@ -1330,12 +1328,12 @@ function dashboardPage() {
           <a href="#/workspace/${state.workspace.id}/messages/scheduled">All Scheduled →</a>
         </div>
         <div class="quota-card wide">
-          <div class="quota-heading"><span>⌁</span><strong>${state.workspace.connectSent}</strong><span>Connects<br/>Sent</span><button>▣ Today⌄</button></div>
+          <div class="quota-heading"><span class="quota-icon">⌁</span><strong>${state.workspace.connectSent}</strong><span>Connects<br/>Sent</span><span class="quota-period">Today</span></div>
           <div class="quota-track"><i style="left:${connectPercent}%"></i></div>
           <div class="quota-scale"><span>0</span><span>${state.workspace.connectLimit}</span></div>
         </div>
         <div class="quota-card wide">
-          <div class="quota-heading"><span>▤</span><strong>${state.workspace.actorRunSent}</strong><span>Agent Actions<br/>Done</span><button>▣ Today⌄</button></div>
+          <div class="quota-heading"><span class="quota-icon">▤</span><strong>${state.workspace.actorRunSent}</strong><span>Agent Actions<br/>Done</span><span class="quota-period">Today</span></div>
           <div class="quota-track muted"><i style="left:${actorRunPercent}%"></i></div>
           <div class="quota-scale"><span>0</span><span>${state.workspace.actorRunLimit}</span></div>
         </div>
@@ -1346,10 +1344,7 @@ function dashboardPage() {
           <div class="analytics-tools">
             <span class="legend-dot warm"></span><span>Connection Requests</span>
             <span class="legend-dot green"></span><span>Agent Actions</span>
-            <button>▣ ${dateRange}⌄</button>
-            <button>♙</button>
-            <button>◉</button>
-            <button>⇩</button>
+            <span class="date-pill">${dateRange}</span>
           </div>
         </div>
         <div class="analytics-stats">

@@ -1933,25 +1933,13 @@ button[type="submit"] {
 .dashboard-actions {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 7px;
 }
 
-.gift-tile {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 4px;
-  background:
-    radial-gradient(circle at 20% 20%, #e5f5ef, transparent 42%),
-    radial-gradient(circle at 75% 65%, #ffe6cd, transparent 48%),
-    #eef2f4;
-  color: #80908c;
-}
-
 .connected-pill,
-.limit-pill,
-.icon-button {
+.limit-pill {
   height: 40px;
   display: inline-flex;
   align-items: center;
@@ -1971,20 +1959,28 @@ button[type="submit"] {
 
 .icon-button {
   width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
   border-color: transparent;
   background: transparent;
+  color: #666;
   font-size: 1.15rem;
 }
 
 .dashboard-metric-row {
   display: grid;
-  grid-template-columns: 178px 178px minmax(250px, 1fr) minmax(250px, 1fr);
+  grid-template-columns: minmax(132px, 0.85fr) minmax(132px, 0.85fr) minmax(205px, 1.3fr) minmax(205px, 1.3fr);
   gap: 8px;
-  padding: 0 24px 40px;
+  padding: 0 16px 32px;
 }
 
 .quota-card {
+  min-width: 0;
   min-height: 182px;
   position: relative;
   overflow: hidden;
@@ -2001,7 +1997,7 @@ button[type="submit"] {
   grid-template-rows: 1fr auto;
   align-items: start;
   column-gap: 12px;
-  padding: 24px 20px 20px;
+  padding: 22px 18px 18px;
 }
 
 .quota-card.compact strong,
@@ -2034,26 +2030,40 @@ button[type="submit"] {
 
 .quota-heading {
   display: grid;
-  grid-template-columns: 34px auto 1fr auto;
+  grid-template-columns: 24px auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 26px 22px 0;
+  gap: 10px;
+  padding: 24px 16px 0;
 }
 
-.quota-heading button,
-.analytics-tools button {
-  height: 32px;
+.quota-icon {
+  color: #9aa0ad;
+  font-size: 0.95rem;
+}
+
+.quota-period,
+.date-pill {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid #dce2ea;
   border-radius: 4px;
   background: #fff;
-  color: #111827;
-  padding: 0 12px;
+  color: #4b5563;
+  padding: 0 10px;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.date-pill {
+  margin-left: 6px;
 }
 
 .quota-track {
   position: absolute;
-  left: 22px;
-  right: 22px;
+  left: 16px;
+  right: 16px;
   bottom: 48px;
   height: 8px;
   border-radius: 999px;
@@ -2074,8 +2084,8 @@ button[type="submit"] {
 
 .quota-scale {
   position: absolute;
-  left: 22px;
-  right: 22px;
+  left: 16px;
+  right: 16px;
   bottom: 24px;
   display: flex;
   justify-content: space-between;
@@ -2101,6 +2111,7 @@ button[type="submit"] {
 .analytics-tools {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   color: #666;
 }
@@ -2760,7 +2771,14 @@ button[type="submit"] {
   margin-top: auto;
 }
 
+@media (max-width: 1180px) {
+  .dashboard-metric-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 840px) {
+  .dashboard-metric-row,
   .apify-connect-hero,
   .apify-flow-grid,
   .apify-signal-grid,
