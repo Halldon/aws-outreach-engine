@@ -228,8 +228,8 @@ const assertWorkspaceRecovery = async (page, workspaceId, route, heading, backHr
         errors.push({ type: 'routing', message: 'Campaign creation should redirect to the new detail route before Apify data import.' });
       });
       const draftText = (await page.textContent('body')) || '';
-      if (!draftText.includes('Test campaign') || !draftText.includes('Run Apify Actor')) {
-        errors.push({ type: 'logic', message: 'Created campaign should render a clear Run Apify Actor next step.' });
+      if (!draftText.includes('Test campaign') || !draftText.includes('Find leads and draft messages')) {
+        errors.push({ type: 'logic', message: 'Created campaign should render embedded lead sourcing instead of sending users to a separate runner.' });
       }
       await page.goto(`${APP_URL}/#/workspace/${workspaceId}/campaigns`, { waitUntil: 'domcontentloaded' });
       const countAfter = await getCampaignCount(page);

@@ -1699,6 +1699,7 @@ button[type="submit"] {
 }
 
 .campaign-command,
+.campaign-source-panel,
 .studio-overview {
   grid-column: 1 / -1;
 }
@@ -1726,6 +1727,39 @@ button[type="submit"] {
 
 .campaign-next-step .btn {
   margin-left: auto;
+}
+
+.campaign-source-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.campaign-source-form {
+  grid-template-columns: minmax(190px, 0.72fr) minmax(300px, 1.6fr) 92px auto;
+}
+
+.campaign-source-form textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.campaign-source-helper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e1e6ed;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.campaign-source-helper .btn {
+  flex-shrink: 0;
+}
+
+.campaign-signal-grid {
+  margin-top: 2px;
 }
 
 .prospect-table .row {
@@ -2916,6 +2950,11 @@ button[type="submit"] {
   .apify-signal-grid,
   .apify-run-form {
     grid-template-columns: 1fr;
+  }
+
+  .campaign-source-helper {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .apify-status-stack {

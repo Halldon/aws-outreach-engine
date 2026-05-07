@@ -1637,7 +1637,19 @@ function campaignDetailPage(id) {
     index < Math.min(4, Math.max(1, Math.round(campaign.prospects / 800)))
   );
   const nextApprovals = state.approvals.filter((approval) => approval.campaignId === campaign.id);
-  const apifyCampaignHref = `#/connect-apify?campaign=${encodeURIComponent(campaign.id)}`;
+  const connected = !!state.integrations.apify;
+  const run = state.apifyRun || {};
+  const selectedActor = run.actorId || apifyActorOptions[0].id;
+  const selectedActorConfig = apifyActorOptions.find((actor) => actor.id === selectedActor) || apifyActorOptions[0];
+  const target = run.target || "";
+  const tokenLabel =
+    run.tokenConfigured === true ? "API token ready" : run.tokenConfigured === false ? "API token missing" : "Checking token";
+  const actorOptionsHtml = apifyActorOptions
+    .map(
+      (actor) =>
+        `<option value="${actor.id}" ${actor.id === selectedActor ? "selected" : ""}>${actor.label}</option>`
+    )
+    .join("");
 
   return workspacePage(
     "campaigns",
@@ -1661,13 +1673,55 @@ function campaignDetailPage(id) {
         <div class="toolbar campaign-actions" style="margin-top: 14px;">
           <button class="btn ${isActive ? "btn-ghost" : "btn-primary"}" data-action="toggle-campaign" data-id="${campaign.id}" data-status="${nextCampaignStatus}">${campaignActionLabel}</button>
           <button class="btn" data-action="duplicate-campaign" data-id="${campaign.id}">Duplicate campaign</button>
-          <a class="btn btn-primary" href="${apifyCampaignHref}">Run Apify Actor</a>
           <a class="btn btn-primary" href="#/workspace/${state.workspace.id}/messages/inbox?campaign=${campaign.id}">Open campaign inbox</a>
         </div>
         <div class="campaign-next-step">
           <strong>Need fresh prospects?</strong>
-          <span>Run an Apify Actor, then import the top signal back into this campaign inbox.</span>
-          <a class="btn btn-ghost" href="${apifyCampaignHref}">Open Apify runner</a>
+          <span>Paste profile URLs or search for qualified leads below. Importing creates review-ready drafts in this campaign inbox.</span>
+        </div>
+      </section>
+      <section class="panel campaign-source-panel" id="campaign-lead-source">
+        <div class="toolbar">
+          <div>
+            <span class="eyebrow">Live lead source</span>
+            <h3>Find leads and draft messages</h3>
+            <div class="small muted">Paste LinkedIn/profile URLs, one per line, or search for relevant leads. Results stay attached to this campaign.</div>
+          </div>
+          <div class="apify-status-stack compact">
+            <span class="chip ${connected ? "active" : ""}">${connected ? "Connected" : "Disconnected"}</span>
+            <span class="chip" id="apify-token-status">${tokenLabel}</span>
+            <span class="chip">${apifyRunLabel(run)}</span>
+          </div>
+        </div>
+        <form id="apify-run-form" class="apify-run-form campaign-source-form" onsubmit="return false;">
+          <label class="field">
+            <span>Source type</span>
+            <select name="actorId" id="apify-actor-select">${actorOptionsHtml}</select>
+          </label>
+          <label class="field apify-target-field">
+            <span>Profiles or search query</span>
+            <textarea name="target" id="apify-target" placeholder="linkedin.com/in/person&#10;site:linkedin.com/in founder AWS credits">${attrSafe(target)}</textarea>
+          </label>
+          <label class="field apify-pages-field">
+            <span>Pages</span>
+            <input name="maxPages" type="number" min="1" max="5" value="${Math.min(5, Math.max(1, Number(run.maxPages || 1)))}" />
+          </label>
+          <button class="btn btn-primary" id="run-apify-crawl" type="submit">Find leads</button>
+        </form>
+        <div class="campaign-source-helper">
+          <div>
+            <strong>${attrSafe(selectedActorConfig.label)}</strong>
+            <div class="small muted">${attrSafe(selectedActorConfig.helper)} LinkedIn profile searches automatically use the search scraper.</div>
+          </div>
+          <button class="btn btn-primary" data-action="import-prospect" data-campaign-id="${attrSafe(campaign.id)}">Import top lead to inbox</button>
+        </div>
+        ${
+          run.error
+            ? `<div class="connector-notice"><strong>Last run:</strong> ${attrSafe(run.error)}</div>`
+            : ""
+        }
+        <div class="apify-signal-grid campaign-signal-grid">
+          ${renderApifySignalCards(state)}
         </div>
       </section>
       <section class="panel">
@@ -1687,7 +1741,7 @@ function campaignDetailPage(id) {
                   <span class="status-pill ${prospect.statusType === "warn" ? "warn" : "active"}">${prospect.score}</span>
                 </div>`
             )
-            .join("") || `<div class="muted small">No assigned prospects yet. <a href="${apifyCampaignHref}">Run Apify Actor</a> to import live-data prospects.</div>`}
+            .join("") || `<div class="muted small">No assigned prospects yet. Use the lead source panel above to import live-data prospects.</div>`}
         </div>
       </section>
       <section class="panel">
@@ -1708,7 +1762,7 @@ function campaignDetailPage(id) {
                   <span class="reply-chip gray">${message.status}</span>
                 </div>`
             )
-            .join("") || `<div class="muted small">No campaign messages yet. <a href="${apifyCampaignHref}">Run Apify Actor</a>, then import the top signal.</div>`}
+            .join("") || `<div class="muted small">No campaign messages yet. Use the lead source panel above to generate review-ready drafts.</div>`}
         </div>
       </section>
     </div>`
@@ -2662,7 +2716,7 @@ function connectApifyPage(query = new URLSearchParams()) {
             <span>Pages</span>
             <input name="maxPages" type="number" min="1" max="5" value="${Math.min(5, Math.max(1, Number(run.maxPages || 1)))}" />
           </label>
-          <button class="btn btn-primary" id="run-apify-crawl" type="submit">Run Apify Actor</button>
+          <button class="btn btn-primary" id="run-apify-crawl" type="submit">Find leads</button>
         </form>
 
         <div class="apify-link-row">
@@ -3318,7 +3372,7 @@ async function runApifyActor(form, button) {
   let actorId = form?.querySelector("[name='actorId']")?.value || apifyActorOptions[0].id;
   const target = form?.querySelector("[name='target']")?.value.trim() || APIFY_DEFAULT_TARGET;
   const maxPages = form?.querySelector("[name='maxPages']")?.value || 1;
-  const previousText = button?.textContent || "Run Apify Actor";
+  const previousText = button?.textContent || "Find leads";
   if (actorId === "apify/website-content-crawler" && /linkedin\.com\/in|site:linkedin\.com\/in/i.test(target)) {
     actorId = "apify/google-search-scraper";
   }
