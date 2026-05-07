@@ -2523,6 +2523,7 @@ function renderApifySignalCards(state) {
 }
 
 function connectApifyPage(query = new URLSearchParams()) {
+  const session = getSession();
   const state = getAppState();
   const connected = !!state.integrations.apify;
   const run = state.apifyRun || {};
@@ -2540,43 +2541,24 @@ function connectApifyPage(query = new URLSearchParams()) {
     )
     .join("");
 
-  return `
-    <div class="app-root apify-connect-root">
-      <div class="panel apify-connect-shell">
-        <div class="topbar">
-          ${renderLogo()}
-          <a class="btn" href="${campaign ? `#/workspace/${state.workspace.id}/campaigns/${campaign.id}` : `#/workspace/${state.workspace.id}/dashboard`}">Back to ${campaign ? "campaign" : "workspace"}</a>
-        </div>
-        <div class="apify-connect-hero">
+  return workspacePage(
+    campaign ? "campaigns" : "settings",
+    session,
+    `<div class="apify-workspace-grid">
+      <section class="panel apify-run-panel">
+        <div class="toolbar">
           <div>
             <span class="eyebrow">Apify live web data</span>
-            <h1>Data connector</h1>
-            <p class="muted">Run an Apify Actor, pull default dataset rows into this workspace, score the signals, and unlock campaign actions from the same flow.${campaign ? ` This run is staged for ${attrSafe(campaign.name)}.` : ""}</p>
+            <h3>Data source</h3>
+            <div class="small muted">${campaign ? `Staged for ${attrSafe(campaign.name)}` : "Pull public profile/source data into the workspace."}</div>
           </div>
-          <div class="apify-status-stack">
+          <div class="apify-status-stack compact">
             <span class="chip ${connected ? "active" : ""}">${connected ? "Connected" : "Disconnected"}</span>
             <span class="chip" id="apify-token-status">${tokenLabel}</span>
             <span class="chip">${apifyRunLabel(run)}</span>
           </div>
         </div>
-
-        <div class="apify-flow-grid">
-          <div class="apify-flow-step">
-            <span>1</span>
-            <strong>Profile lookup</strong>
-            <p>${attrSafe(selectedActorConfig.helper)} Paste a LinkedIn profile URL or search query when you want a person-level draft.</p>
-          </div>
-          <div class="apify-flow-step">
-            <span>2</span>
-            <strong>Dataset</strong>
-            <p>${Number(run.lastItemCount || 0)} latest rows normalized for ICP fit, freshness, and outreach evidence.</p>
-          </div>
-          <div class="apify-flow-step">
-            <span>3</span>
-            <strong>Draft for review</strong>
-            <p>Imported rows become LinkedIn draft messages with source evidence for you to review before sending.</p>
-          </div>
-        </div>
+        <p class="muted apify-workspace-copy">Run an Apify Actor, normalize the dataset rows, and create reviewable LinkedIn-style draft messages from the best signal.${campaign ? " Imported rows return directly to this campaign inbox." : ""}</p>
 
         <form id="apify-run-form" class="apify-run-form" onsubmit="return false;">
           <label class="field">
@@ -2595,9 +2577,8 @@ function connectApifyPage(query = new URLSearchParams()) {
         </form>
 
         <div class="apify-link-row">
+          <a class="btn btn-ghost" href="${campaign ? `#/workspace/${state.workspace.id}/campaigns/${campaign.id}` : `#/workspace/${state.workspace.id}/dashboard`}">Back to ${campaign ? "campaign" : "dashboard"}</a>
           <a class="btn btn-ghost" href="${APIFY_CONSOLE_URL}" target="_blank" rel="noopener noreferrer">Open Apify Console</a>
-          <a class="btn btn-ghost" href="${APIFY_DOCS_URL}" target="_blank" rel="noopener noreferrer">Open agent docs</a>
-          <a class="btn btn-ghost" href="${APIFY_RESOURCE_URL}" target="_blank" rel="noopener noreferrer">Hackathon guide</a>
           <button class="btn" data-action="toggle-integration" data-provider="apify">${connected ? "Disconnect" : "Connect demo mode"}</button>
         </div>
 
@@ -2606,7 +2587,33 @@ function connectApifyPage(query = new URLSearchParams()) {
             ? `<div class="connector-notice"><strong>Last run:</strong> ${attrSafe(run.error)}</div>`
             : ""
         }
+      </section>
 
+      <aside class="panel apify-workflow-panel">
+        <div class="toolbar">
+          <h3>How it works</h3>
+          <span class="chip">${Number(run.lastItemCount || 0)} rows</span>
+        </div>
+        <div class="apify-flow-grid">
+          <div class="apify-flow-step">
+            <span>1</span>
+            <strong>Profile lookup</strong>
+            <p>${attrSafe(selectedActorConfig.helper)} Paste a LinkedIn profile URL or search query when you want a person-level draft.</p>
+          </div>
+          <div class="apify-flow-step">
+            <span>2</span>
+            <strong>Dataset</strong>
+            <p>Rows are scored for ICP fit, freshness, and evidence quality before import.</p>
+          </div>
+          <div class="apify-flow-step">
+            <span>3</span>
+            <strong>Draft for review</strong>
+            <p>Imported rows become LinkedIn draft messages with source evidence for review.</p>
+          </div>
+        </div>
+      </aside>
+
+      <section class="panel apify-results-panel">
         <div class="toolbar apify-results-head">
           <div>
             <h3>Dataset signals</h3>
@@ -2617,9 +2624,10 @@ function connectApifyPage(query = new URLSearchParams()) {
         <div class="apify-signal-grid">
           ${renderApifySignalCards(state)}
         </div>
-      </div>
-    </div>
-  `;
+      </section>
+    </div>`,
+    { showIntegrationHint: false }
+  );
 }
 
 function connectServicePage(provider = "hubspot", query = new URLSearchParams()) {
