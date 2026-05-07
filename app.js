@@ -473,6 +473,20 @@ const INITIAL_STATE = cloneValue({
       signature: "James from AWS Outreach Engine",
       bannedWords: "spam, buy now, urgent",
     },
+    studio: {
+      companyUrl: "www.awsoutreach.example/",
+      bookingLink: "https://www.awsoutreach.example/",
+      productUrl: "www.awsoutreach.example/",
+      brief:
+        "AWS Outreach Engine turns Apify runs, public web signals, and agent research into prioritized prospects, campaign-ready copy, and approval workflows.",
+      icp: "AWS startup founders, finance leaders, cloud partnership owners, and GTM teams that need personalized outbound from live web data.",
+      valueProps:
+        "Live Apify-powered lead research\nPersonalized LinkedIn drafts grounded in profile evidence\nApproval workflow before sending",
+      painPoints:
+        "Generic cold messages that do not reference the prospect\nManual research across LinkedIn and company pages\nNo review step before outreach goes out",
+      activeDraftId: "draft_001",
+      updatedAt: "Today",
+    },
     profile: {
       firstName: "James",
       lastName: "Builder",
@@ -588,6 +602,10 @@ function normalizeState(rawState = {}) {
       intent: {
         ...base.settings.intent,
         ...((cleanedState.settings && cleanedState.settings.intent) || {}),
+      },
+      studio: {
+        ...base.settings.studio,
+        ...((cleanedState.settings && cleanedState.settings.studio) || {}),
       },
       profile: {
         ...base.settings.profile,
@@ -911,12 +929,12 @@ function field(name, label, placeholder, type = "text", value = "", disabled = f
     <label class="field">
       ${labelMarkup}
       <input
-        name="${name}"
-        type="${type}"
-        placeholder="${placeholder}"
+        name="${attrSafe(name)}"
+        type="${attrSafe(type)}"
+        placeholder="${attrSafe(placeholder)}"
         class="w-full border border-input text-sm shadow-sm transition-colors text-primary file:border-0 file:bg-transparent file:text-sm file: focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 px-3 py-2.5 rounded h-9 bg-[#F6F6F6]"
         ${disable}
-        value="${value}"
+        value="${attrSafe(value)}"
       />
     </label>
   `;
@@ -928,10 +946,10 @@ function textAreaField(name, label, placeholder, value = "") {
     <label class="field">
       ${labelMarkup}
       <textarea
-        name="${name}"
-        placeholder="${placeholder}"
+        name="${attrSafe(name)}"
+        placeholder="${attrSafe(placeholder)}"
         class="w-full border border-input text-sm shadow-sm transition-colors text-primary file:border-0 file:bg-transparent file:text-sm file: focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 px-3 py-2.5 rounded min-h-20 bg-[#F6F6F6]"
-      >${value}</textarea>
+      >${attrSafe(value)}</textarea>
     </label>
   `;
 }
@@ -1255,10 +1273,35 @@ function inferCompanyContext(row, text, company) {
   return company ? `${company} appears in the imported profile/source data.` : "";
 }
 
-function buildPersonalizedDraft(signal, campaign) {
+function splitStudioLines(value, limit = 3) {
+  return String(value || "")
+    .split(/\n|,/)
+    .map((item) => cleanDatasetText(item))
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function getActiveStudioDraft(state) {
+  const drafts = Array.isArray(state?.studioDrafts) ? state.studioDrafts : [];
+  const activeId = state?.settings?.studio?.activeDraftId;
+  return drafts.find((draft) => draft.id === activeId) || drafts[0] || null;
+}
+
+function renderStudioTemplate(template, variables) {
+  const rendered = cleanDatasetText(template || "").replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (_match, key) => {
+    const normalized = String(key || "").replace(/-/g, "_");
+    return variables[normalized] || variables[key] || "";
+  });
+  return rendered.replace(/\s+/g, " ").trim();
+}
+
+function buildPersonalizedDraft(signal, campaign, state = getAppState()) {
   const person = cleanDatasetText(signal.person || signal.contact || "");
   const firstName = firstNameFromProfileName(person);
   const company = cleanDatasetText(signal.company || "your team");
+  const studio = state?.settings?.studio || {};
+  const intent = state?.settings?.intent || {};
+  const activeDraft = getActiveStudioDraft(state);
   const insights = signal.insights || {};
   const title = cleanDatasetText(signal.title || "the public signal I found")
     .replace(/\s*\|\s*LinkedIn.*$/i, "")
@@ -1283,13 +1326,37 @@ function buildPersonalizedDraft(signal, campaign) {
   const activity = insights.recentActivity || summary || title || "your recent profile activity";
   const skillLine = evidence.length ? ` especially around ${evidence.join(", ")}` : "";
   const contextLine = insights.companyContext ? `I also saw ${insights.companyContext}` : "";
+  const valueProps = splitStudioLines(studio.valueProps, 2);
+  const painPoints = splitStudioLines(studio.painPoints, 2);
+  const offerBrief = cleanDatasetText(studio.brief || "");
+  const tone = cleanDatasetText(intent.tone || "");
+  const signature = cleanDatasetText(intent.signature || "");
+  const studioAngle = [offerBrief, ...valueProps].filter(Boolean).slice(0, 3);
+  const templateVariables = {
+    first_name: firstName,
+    company,
+    signal: activity,
+    role: insights.role || title,
+    recent_activity: activity,
+    objective: usefulObjective || "start a relevant conversation",
+    value_prop: valueProps[0] || offerBrief || "turning live web data into reviewed outreach",
+    pain_point: painPoints[0] || "generic outbound that lacks prospect-specific context",
+    product: offerBrief || "AWS Outreach Engine",
+    tone,
+  };
+  const studioOpener = activeDraft ? renderStudioTemplate(activeDraft.opener, templateVariables) : "";
+  const studioFollowUp = activeDraft ? renderStudioTemplate(activeDraft.followUp, templateVariables) : "";
+  const studioClose = activeDraft ? renderStudioTemplate(activeDraft.close, templateVariables) : "";
 
   return [
-    `Hi ${firstName},`,
+    studioOpener || `Hi ${firstName},`,
     `${sourceLine} and noticed ${roleLine}${skillLine}. The signal that stood out was: ${sentenceWithPeriod(activity)}`,
     contextLine ? sentenceWithPeriod(contextLine) : `That felt relevant because ${sentenceWithPeriod(usefulObjective || "it points to a timely reason to connect without sending a generic cold note")}`,
-    contextLine ? `That felt relevant to this campaign: ${sentenceWithPeriod(usefulObjective || "timely profile context is a better opener than a generic cold note")}` : "",
-    "Worth a quick compare-notes chat this week?",
+    studioFollowUp || (contextLine ? `That felt relevant to this campaign: ${sentenceWithPeriod(usefulObjective || "timely profile context is a better opener than a generic cold note")}` : ""),
+    studioAngle.length ? `The angle I would keep tight: ${sentenceWithPeriod(studioAngle.join("; "))}` : "",
+    painPoints.length ? `I would avoid a generic pitch and speak to ${sentenceWithPeriod(painPoints[0])}` : "",
+    studioClose || "Worth a quick compare-notes chat this week?",
+    signature ? `\n${signature}` : "",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -2307,6 +2374,8 @@ function templatesPage(options = new URLSearchParams()) {
 function studioPage() {
   const session = getSession();
   const state = getAppState();
+  const studioSettings = state.settings?.studio || INITIAL_STATE.settings.studio;
+  const activeDraft = getActiveStudioDraft(state);
   const productOffers = [
     "Decision-maker and business owner with full buying authority at a small-to-mid-size firm in a qualifying service industry.",
     "In-house marketing decision-maker at a qualifying service-industry firm responsible for lead generation performance, campaign execution, and conversion optimization.",
@@ -2336,56 +2405,69 @@ function studioPage() {
         <div class="studio-hidden-drafts">${(state.studioDrafts || []).map((draft) => draft.name).join(" ")}</div>
         <div class="studio-nav-header lower"><button class="studio-tab">♨ Writing Styles</button><a class="square-btn" href="#/workspace/${state.workspace.id}/studio/create">+</a></div>
         <div class="product-tree">
-          <div class="product-node child compact"><span>♨</span><p>My First Writing Style</p><b>◉</b></div>
+          ${(state.studioDrafts || [])
+            .map(
+              (draft) => `
+                <a class="product-node child compact ${activeDraft?.id === draft.id ? "active" : ""}" href="#/workspace/${state.workspace.id}/studio/create?draft=${attrSafe(draft.id)}">
+                  <span>♨</span><p>${attrSafe(draft.name)}</p><b>${activeDraft?.id === draft.id ? "Active" : "✎"}</b>
+                </a>`
+            )
+            .join("")}
         </div>
       </aside>
-      <section class="studio-editor">
+      <form id="studio-product-form" class="studio-editor" onsubmit="return false;">
         <div class="studio-editor-header">
-          <div><strong>AWS Outreach Engine</strong><button class="icon-button">✎</button></div>
+          <div>
+            <strong>AWS Outreach Engine</strong>
+            <span class="chip">${activeDraft ? `Using ${attrSafe(activeDraft.name)}` : "No sequence selected"}</span>
+          </div>
           <div class="row">
-            <button class="btn btn-ghost">◉ Share</button>
-            <button class="btn btn-primary">Save</button>
-            <button class="icon-button">⋮</button>
+            <a class="btn btn-ghost" href="#/workspace/${state.workspace.id}/studio/create${activeDraft ? `?draft=${attrSafe(activeDraft.id)}` : ""}">Edit sequence</a>
+            <button class="btn btn-primary" type="submit">Save</button>
+            <button class="icon-button" type="button">⋮</button>
           </div>
         </div>
         <div class="studio-form-grid">
           <div class="studio-section-copy">
             <strong>Overview Information</strong>
-            <span>Provide key company facts for accurate and grounded content creation.</span>
+            <span>These fields are used when new campaign inbox drafts are generated from Apify lead data.</span>
           </div>
           <div class="studio-fields">
-            ${field("companyUrl", "Company URL", "URL of your company website.", "text", "www.awsoutreach.example/")}
-            ${field("bookingLink", "Booking Link *", "URL for prospects to book a meeting with you.", "text", "https://www.awsoutreach.example/")}
-            ${field("productUrl", "Product URL", "URL of your company product.", "text", "www.awsoutreach.example/")}
+            ${field("companyUrl", "Company URL", "URL of your company website.", "text", studioSettings.companyUrl)}
+            ${field("bookingLink", "Booking Link *", "URL for prospects to book a meeting with you.", "text", studioSettings.bookingLink)}
+            ${field("productUrl", "Product URL", "URL of your company product.", "text", studioSettings.productUrl)}
             ${textAreaField(
               "brief",
               "Brief Description *",
               "Describe your offer in a few words.",
-              "AWS Outreach Engine is a live-data outreach workspace that turns Apify Actor runs, public web signals, and agent research into prioritized prospects, campaign-ready copy, and approval workflows."
+              studioSettings.brief
             )}
             ${textAreaField(
               "icp",
               "Ideal Customer Profile",
               "Describe your ideal customer profile.",
-              "Job Titles/Roles: Artists, creative professionals, business owners, entrepreneurs, Web3 founders, NFT creators, and digital enterprise leaders. Company Characteristics: Small to medium-sized businesses, independent artists and creators, Web3/blockchain startups, and emerging digital enterprises."
+              studioSettings.icp
             )}
           </div>
           <div class="studio-divider"></div>
           <div class="studio-section-copy">
             <strong>Product Specifics</strong>
-            <span>Provide key product information for accurate pitch creation.</span>
+            <span>These value props and pain points shape the angle in each personalized draft.</span>
           </div>
           <div class="studio-fields">
-            ${textAreaField("competitors", "Competitors", "List your main competitors.", "Not mentioned on website")}
-            <label class="field repeat-field"><span>Value Propositions *</span>
-              ${["Tailored digital solutions specifically designed for artists and businesses", "Comprehensive service offering combining website design, advertising, and strategic consulting", "Personalized boutique agency approach with dedicated attention to each client"].map((item) => `<div class="inline-input"><input value="${item}" /><button type="button">×</button></div>`).join("")}
-            </label>
-            <label class="field repeat-field"><span>Painpoints *</span>
-              ${["Artists and creators struggling to build professional online presence", "Businesses lacking effective digital advertising strategies", "Small businesses without in-house resources for web conversion"].map((item) => `<div class="inline-input"><input value="${item}" /><button type="button">×</button></div>`).join("")}
+            ${textAreaField("valueProps", "Value Propositions *", "One per line", studioSettings.valueProps)}
+            ${textAreaField("painPoints", "Pain Points *", "One per line", studioSettings.painPoints)}
+            <label class="field">
+              <span>Active message sequence</span>
+              <select name="activeDraftId">
+                ${(state.studioDrafts || [])
+                  .map((draft) => `<option value="${attrSafe(draft.id)}" ${activeDraft?.id === draft.id ? "selected" : ""}>${attrSafe(draft.name)}</option>`)
+                  .join("")}
+              </select>
             </label>
           </div>
         </div>
-      </section>
+      </form>
     </div>`
   );
 }
@@ -3275,7 +3357,7 @@ function handleProspectImport(campaignId = "") {
     const person = cleanDatasetText(signal.person || "");
     const company = cleanDatasetText(signal.company || "Unknown company");
     const name = person || `${company} Signal`;
-    const personalizedDraft = buildPersonalizedDraft(signal, targetCampaign);
+    const personalizedDraft = buildPersonalizedDraft(signal, targetCampaign, draft);
     const profileUrl = signal.profileUrl && signal.profileUrl !== "#" ? signal.profileUrl : signal.url;
     draft.integrations.apify = true;
     draft.prospects.unshift({
@@ -3308,6 +3390,7 @@ function handleProspectImport(campaignId = "") {
         evidence: signal.evidence || [],
         insights: signal.insights || {},
         source: signal.source || "Apify dataset",
+        studioDraft: getActiveStudioDraft(draft)?.name || "",
       },
     });
     if (targetCampaign) {
@@ -3589,6 +3672,26 @@ function handleCampaignCreate(form) {
   }, 500);
 }
 
+function handleStudioProductSubmit(form) {
+  const getValue = (name) => form.querySelector(`[name='${name}']`)?.value.trim() || "";
+  updateState((draft) => {
+    draft.settings.studio = {
+      ...(draft.settings.studio || INITIAL_STATE.settings.studio),
+      companyUrl: getValue("companyUrl"),
+      bookingLink: getValue("bookingLink"),
+      productUrl: getValue("productUrl"),
+      brief: getValue("brief"),
+      icp: getValue("icp"),
+      valueProps: getValue("valueProps"),
+      painPoints: getValue("painPoints"),
+      activeDraftId: getValue("activeDraftId") || draft.settings.studio?.activeDraftId || draft.studioDrafts?.[0]?.id || "",
+      updatedAt: "just now",
+    };
+  });
+  flash("Studio settings saved and applied to new message drafts");
+  render();
+}
+
 function handleStudioSubmit(form) {
   const id = form.querySelector("[name='draft-id']")?.value || `draft_${Date.now()}`;
   const name = form.querySelector("[name='name']").value.trim() || "Untitled sequence";
@@ -3608,11 +3711,19 @@ function handleStudioSubmit(form) {
       existing.followUp = followUp;
       existing.close = close;
       existing.updatedAt = "just now";
+      draft.settings.studio = {
+        ...(draft.settings.studio || INITIAL_STATE.settings.studio),
+        activeDraftId: id,
+      };
       return;
     }
     draft.studioDrafts.unshift({ id, name, audience, notes, opener, followUp, close, updatedAt: "just now" });
+    draft.settings.studio = {
+      ...(draft.settings.studio || INITIAL_STATE.settings.studio),
+      activeDraftId: id,
+    };
   });
-  flash("Studio draft saved");
+  flash("Studio sequence saved and applied to new message drafts");
   setHash(`/workspace/${currentWorkspaceId()}/studio`);
   render();
 }
@@ -3771,6 +3882,14 @@ function bindActions() {
     studioForm.onsubmit = (event) => {
       event.preventDefault();
       handleStudioSubmit(studioForm);
+    };
+  }
+
+  const studioProductForm = document.getElementById("studio-product-form");
+  if (studioProductForm) {
+    studioProductForm.onsubmit = (event) => {
+      event.preventDefault();
+      handleStudioProductSubmit(studioProductForm);
     };
   }
 
