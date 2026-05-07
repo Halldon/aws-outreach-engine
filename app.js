@@ -1217,10 +1217,72 @@ function sentenceWithPeriod(text) {
   return /[.!?]$/.test(clean) ? clean : `${clean}.`;
 }
 
+function uniqueCleanList(items, limit = 5) {
+  const seen = new Set();
+  return items
+    .flatMap((item) => Array.isArray(item) ? item : String(item || "").split(/[,;|•]/))
+    .map((item) => cleanDatasetText(item))
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+function sentenceSnippets(text) {
+  return cleanDatasetText(text)
+    .split(/(?<=[.!?])\s+|(?:\s[-–]\s)/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 24 && item.length < 220);
+}
+
+function inferRole(row, title, text, company, person) {
+  const direct = cleanDatasetText(row.role || row.jobTitle || row.position || row.headline || row.occupation || "");
+  if (direct) return direct;
+  const titleWithoutPerson = cleanDatasetText(title).replace(person, "").replace(/\s*\|\s*LinkedIn.*$/i, "");
+  const atMatch = titleWithoutPerson.match(/(?:^|\s)(founder|co-founder|ceo|cto|cmo|head of [^|–-]+|vp [^|–-]+|vice president [^|–-]+|director [^|–-]+|growth [^|–-]+|sales [^|–-]+|marketing [^|–-]+)\s+(?:at|@)\s+/i);
+  if (atMatch) return atMatch[1].trim();
+  const sentence = sentenceSnippets(text).find((item) => /founder|head of|vp|director|leads|runs|owner|ceo|cto|cmo/i.test(item));
+  if (sentence) return sentence.replace(company, "").replace(person, "").slice(0, 110).trim();
+  return "";
+}
+
+function inferRecentActivity(row, text, title) {
+  const direct = cleanDatasetText(row.recentPost || row.recentActivity || row.latestPost || row.post || row.activity || "");
+  if (direct) return direct.slice(0, 220);
+  const activitySentence = sentenceSnippets(text).find((item) => /posted|shared|wrote|commented|announced|launched|hiring|building|published|recently/i.test(item));
+  if (activitySentence) return activitySentence;
+  return cleanDatasetText(title).replace(/\s*\|\s*LinkedIn.*$/i, "").slice(0, 180);
+}
+
+function inferSkills(row, text) {
+  const direct = uniqueCleanList([row.skills, row.skill, row.topSkills, row.keywords, row.topics], 6);
+  if (direct.length) return direct;
+  const vocabulary = [
+    "AI", "agents", "automation", "workflow", "outbound", "growth", "RevOps", "sales",
+    "marketing", "lead generation", "LinkedIn", "founder-led sales", "data", "scraping",
+    "LLM", "customer acquisition", "hiring", "partnerships", "developer tools"
+  ];
+  const lowered = text.toLowerCase();
+  return vocabulary.filter((term) => lowered.includes(term.toLowerCase())).slice(0, 5);
+}
+
+function inferCompanyContext(row, text, company) {
+  const direct = cleanDatasetText(row.companyContext || row.companyDescription || row.about || row.organizationDescription || "");
+  if (direct) return direct.slice(0, 220);
+  const companySentence = sentenceSnippets(text).find((item) => item.includes(company) && /build|help|platform|team|company|startup|service|product/i.test(item));
+  if (companySentence) return companySentence.slice(0, 220);
+  return company ? `${company} appears in the imported profile/source data.` : "";
+}
+
 function buildPersonalizedDraft(signal, campaign) {
   const person = cleanDatasetText(signal.person || signal.contact || "");
   const firstName = firstNameFromProfileName(person);
   const company = cleanDatasetText(signal.company || "your team");
+  const insights = signal.insights || {};
   const title = cleanDatasetText(signal.title || "the public signal I found")
     .replace(/\s*\|\s*LinkedIn.*$/i, "")
     .replace(person, "")
@@ -1235,20 +1297,23 @@ function buildPersonalizedDraft(signal, campaign) {
     .trim()
     .slice(0, 190)
     .replace(/\.$/, "");
-  const evidence = (signal.evidence || []).slice(0, 2).map(cleanDatasetText).filter(Boolean);
+  const evidence = uniqueCleanList([insights.skills || [], signal.evidence || []], 3);
   const campaignObjective = cleanDatasetText(campaign?.objective || "");
   const usefulObjective = campaignObjective.length > 18 ? campaignObjective : "";
   const sourceHost = displayHostFromUrl(signal.profileUrl || signal.url || "");
   const sourceLine = sourceHost ? `I found this from ${sourceHost}` : "I found this in public web data";
-  const evidenceLine = evidence.length ? ` around ${evidence.join(" and ")}` : "";
-  const context = summary || title || "your recent profile activity";
+  const roleLine = insights.role ? `your work as ${insights.role}` : `your work at ${company}`;
+  const activity = insights.recentActivity || summary || title || "your recent profile activity";
+  const skillLine = evidence.length ? ` especially around ${evidence.join(", ")}` : "";
+  const contextLine = insights.companyContext ? `I also saw ${insights.companyContext}` : "";
 
   return [
     `Hi ${firstName},`,
-    `${sourceLine} and noticed ${company} has a fresh signal${evidenceLine}: ${context}.`,
-    `That stood out because ${sentenceWithPeriod(usefulObjective || "it looks like a timely reason to start a relevant conversation instead of sending a generic cold note")}`,
+    `${sourceLine} and noticed ${roleLine}${skillLine}. The signal that stood out was: ${sentenceWithPeriod(activity)}`,
+    contextLine ? sentenceWithPeriod(contextLine) : `That felt relevant because ${sentenceWithPeriod(usefulObjective || "it points to a timely reason to connect without sending a generic cold note")}`,
+    contextLine ? `That felt relevant to this campaign: ${sentenceWithPeriod(usefulObjective || "timely profile context is a better opener than a generic cold note")}` : "",
     "Worth a quick compare-notes chat this week?",
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
 
 function normalizeApifyRows(rows) {
@@ -1267,14 +1332,24 @@ function normalizeApifyRows(rows) {
         : "#";
     const summaryText = [description, row.text, row.markdown].map((item) => cleanDatasetText(item)).filter(Boolean).join(" ");
     const text = [person, title, summaryText, row.url, company].map((item) => cleanDatasetText(item)).filter(Boolean).join(" ");
+    const insights = {
+      role: inferRole(row, title, text, company, person),
+      recentActivity: inferRecentActivity(row, text, title),
+      skills: inferSkills(row, text),
+      companyContext: inferCompanyContext(row, text, company),
+    };
     const lowered = text.toLowerCase();
-    const evidence = ["linkedin", "hiring", "founder", "growth", "agent", "automation", "workflow", "scrape", "data", "llm", "crawler", "lead"].filter(
-      (word) => lowered.includes(word)
-    );
+    const evidence = uniqueCleanList([
+      insights.skills,
+      ["linkedin", "hiring", "founder", "growth", "agent", "automation", "workflow", "scrape", "data", "llm", "crawler", "lead"].filter(
+        (word) => lowered.includes(word)
+      ),
+    ], 6);
     return {
       source: cleanDatasetText(row.source || row.actor || "Apify dataset"),
       company,
       person,
+      insights,
       profileUrl,
       title,
       url,
@@ -2085,8 +2160,15 @@ function messageDetailPage(messageId) {
   }
 
   const evidence = message.personalization?.evidence || [];
+  const insights = message.personalization?.insights || {};
   const profileUrl = message.profileUrl && message.profileUrl !== "#" ? message.profileUrl : "";
   const sourceUrl = message.sourceUrl && message.sourceUrl !== "#" ? message.sourceUrl : "";
+  const insightRows = [
+    ["Role", insights.role],
+    ["Recent post/activity", insights.recentActivity],
+    ["Skills/topics", Array.isArray(insights.skills) ? insights.skills.join(", ") : insights.skills],
+    ["Company context", insights.companyContext],
+  ].filter(([, value]) => cleanDatasetText(value));
 
   return workspacePage(
     "messages",
@@ -2109,6 +2191,13 @@ function messageDetailPage(messageId) {
               <strong>Personalization basis</strong>
               <span>${attrSafe(message.personalization.signal || "Imported public profile signal")}</span>
               <p>${attrSafe(message.personalization.summary || "Draft generated from the imported Apify dataset row.")}</p>
+              ${
+                insightRows.length
+                  ? `<div class="insight-grid">
+                      ${insightRows.map(([label, value]) => `<div><span>${label}</span><strong>${attrSafe(value)}</strong></div>`).join("")}
+                    </div>`
+                  : ""
+              }
               <div class="tag-row">${evidence.map((tag) => `<span class="chip">${attrSafe(tag)}</span>`).join("")}</div>
               <div class="row">
                 ${profileUrl ? `<a class="btn btn-ghost" href="${attrSafe(profileUrl)}" target="_blank" rel="noopener noreferrer">Open LinkedIn/source profile</a>` : ""}
@@ -3163,6 +3252,7 @@ function handleProspectImport(campaignId = "") {
         signal: signal.title,
         summary: signal.summary,
         evidence: signal.evidence || [],
+        insights: signal.insights || {},
         source: signal.source || "Apify dataset",
       },
     });

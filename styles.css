@@ -614,6 +614,34 @@ button.btn-ghost:hover {
   color: #5f6672;
 }
 
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.insight-grid div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e1e6ed;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.insight-grid span {
+  display: block;
+  margin-bottom: 4px;
+  color: #6b7280;
+  font-size: 0.74rem;
+}
+
+.insight-grid strong {
+  display: block;
+  color: #111827;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
 .muted,
 small {
   color: #7a7a7a;
@@ -1568,6 +1596,10 @@ button[type="submit"] {
 
   .workspace-content-area .split,
   .panel > .split {
+    grid-template-columns: 1fr;
+  }
+
+  .insight-grid {
     grid-template-columns: 1fr;
   }
 }
