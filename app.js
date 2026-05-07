@@ -1192,6 +1192,68 @@ function displayHostFromUrl(url) {
   }
 }
 
+function isGoogleSearchWrapperUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return /(^|\.)google\./i.test(parsed.hostname) && parsed.pathname.includes("/search");
+  } catch {
+    return false;
+  }
+}
+
+function extractLinkedInProfileUrl(value) {
+  const text = cleanDatasetText(value);
+  const direct = text.match(/https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[^\s"'<>?#]+\/?/i)?.[0];
+  if (direct) return safeDatasetUrl(direct);
+  const decodedText = decodeURIComponent(text);
+  const decodedDirect = decodedText.match(/https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[^\s"'<>?#]+\/?/i)?.[0];
+  if (decodedDirect) return safeDatasetUrl(decodedDirect);
+  try {
+    const parsed = new URL(text);
+    const queryUrl = parsed.searchParams.get("q") || parsed.searchParams.get("url") || "";
+    const decoded = decodeURIComponent(queryUrl);
+    const match = decoded.match(/https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[^\s"'<>?#]+\/?/i)?.[0];
+    return match ? safeDatasetUrl(match) : "#";
+  } catch {
+    return "#";
+  }
+}
+
+function profileNameFromLinkedInUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const slug = parsed.pathname.split("/").filter(Boolean).pop() || "";
+    return slug
+      .replace(/\d+$/g, "")
+      .split(/[-_]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ")
+      .trim();
+  } catch {
+    return "";
+  }
+}
+
+function isPlatformNoise(value) {
+  return /^(linkedin|google|search|web data|structured dataset|profile url|public web data|public profile|profile match)$/i.test(cleanDatasetText(value));
+}
+
+function isUrlLikeText(value) {
+  return /^https?:\/\/\S+$/i.test(cleanDatasetText(value));
+}
+
+function isGenericProfileCompany(value) {
+  return /^(linkedin profile|public profile|profile)$/i.test(cleanDatasetText(value));
+}
+
+function expandApifyRows(rows = []) {
+  return rows.flatMap((row) => {
+    const nested = row?.organicResults || row?.results || row?.searchResults || row?.items;
+    return Array.isArray(nested) && nested.length ? nested : row;
+  });
+}
+
 function inferProfileName(row, title, company) {
   const direct = cleanDatasetText(row.person || row.fullName || row.profileName || row.author || row.name || "");
   if (direct && direct !== title && direct !== company && direct.length < 80) return direct;
@@ -1250,15 +1312,16 @@ function inferRecentActivity(row, text, title) {
   if (direct) return direct.slice(0, 220);
   const activitySentence = sentenceSnippets(text).find((item) => /posted|shared|wrote|commented|announced|launched|hiring|building|published|recently/i.test(item));
   if (activitySentence) return activitySentence;
-  return cleanDatasetText(title).replace(/\s*\|\s*LinkedIn.*$/i, "").slice(0, 180);
+  const cleanedTitle = cleanDatasetText(title).replace(/\s*\|\s*LinkedIn.*$/i, "").slice(0, 180);
+  return isUrlLikeText(cleanedTitle) || isPlatformNoise(cleanedTitle) || /linkedin profile|profile match/i.test(cleanedTitle) ? "" : cleanedTitle;
 }
 
 function inferSkills(row, text) {
   const direct = uniqueCleanList([row.skills, row.skill, row.topSkills, row.keywords, row.topics], 6);
-  if (direct.length) return direct;
+  if (direct.length) return direct.filter((item) => !isPlatformNoise(item));
   const vocabulary = [
     "AI", "agents", "automation", "workflow", "outbound", "growth", "RevOps", "sales",
-    "marketing", "lead generation", "LinkedIn", "founder-led sales", "data", "scraping",
+    "marketing", "lead generation", "founder-led sales", "data", "scraping",
     "LLM", "customer acquisition", "hiring", "partnerships", "developer tools"
   ];
   const lowered = text.toLowerCase();
@@ -1268,6 +1331,7 @@ function inferSkills(row, text) {
 function inferCompanyContext(row, text, company) {
   const direct = cleanDatasetText(row.companyContext || row.companyDescription || row.about || row.organizationDescription || "");
   if (direct) return direct.slice(0, 220);
+  if (isGenericProfileCompany(company)) return "";
   const companySentence = sentenceSnippets(text).find((item) => item.includes(company) && /build|help|platform|team|company|startup|service|product/i.test(item));
   if (companySentence) return companySentence.slice(0, 220);
   return company ? `${company} appears in the imported profile/source data.` : "";
@@ -1317,13 +1381,21 @@ function buildPersonalizedDraft(signal, campaign, state = getAppState()) {
     .trim()
     .slice(0, 190)
     .replace(/\.$/, "");
-  const evidence = uniqueCleanList([insights.skills || [], signal.evidence || []], 3);
+  const evidence = uniqueCleanList([insights.skills || [], signal.evidence || []], 3).filter((item) => !isPlatformNoise(item));
   const campaignObjective = cleanDatasetText(campaign?.objective || "");
   const usefulObjective = campaignObjective.length > 18 ? campaignObjective : "";
   const sourceHost = displayHostFromUrl(signal.profileUrl || signal.url || "");
-  const sourceLine = sourceHost ? `I found this from ${sourceHost}` : "I found this in public web data";
-  const roleLine = insights.role ? `your work as ${insights.role}` : `your work at ${company}`;
-  const activity = insights.recentActivity || summary || title || "your recent profile activity";
+  const sourceLine = sourceHost.includes("linkedin.com")
+    ? "I found your LinkedIn profile"
+    : sourceHost && !/^google\./i.test(sourceHost)
+      ? `I found this from ${sourceHost}`
+      : "I found this in public web data";
+  const roleLine = insights.role
+    ? `your work as ${insights.role}`
+    : isGenericProfileCompany(company)
+      ? "your public profile"
+      : `your work at ${company}`;
+  const activity = insights.recentActivity || summary || title || "your public profile context";
   const skillLine = evidence.length ? ` especially around ${evidence.join(", ")}` : "";
   const contextLine = insights.companyContext ? `I also saw ${insights.companyContext}` : "";
   const valueProps = splitStudioLines(studio.valueProps, 2);
@@ -1361,21 +1433,48 @@ function buildPersonalizedDraft(signal, campaign, state = getAppState()) {
 }
 
 function normalizeApifyRows(rows) {
-  return rows.slice(0, 8).map((row, index) => {
-    const url = safeDatasetUrl(row.url || row.link || row.loadedUrl || row.canonicalUrl || "#");
+  return expandApifyRows(rows)
+    .map((row, index) => {
+    const rawUrl = safeDatasetUrl(row.url || row.link || row.loadedUrl || row.canonicalUrl || "#");
+    const extractedLinkedInUrl = extractLinkedInProfileUrl(
+      [row.linkedinUrl, row.profileUrl, row.profile, row.publicProfileUrl, row.url, row.link, row.title, row.name, row.text, row.snippet]
+        .map((item) => cleanDatasetText(item))
+        .filter(Boolean)
+        .join(" ")
+    );
     const rawProfileUrl = safeDatasetUrl(row.linkedinUrl || row.profileUrl || row.profile || row.publicProfileUrl || "#");
+    const url = isGoogleSearchWrapperUrl(rawUrl) && extractedLinkedInUrl !== "#" ? extractedLinkedInUrl : rawUrl;
     const domain = displayHostFromUrl(url);
-    const title = cleanDatasetText(row.title || row.name || row.metadata?.title || url || `Dataset row ${index + 1}`);
+    const profileName = profileNameFromLinkedInUrl(extractedLinkedInUrl !== "#" ? extractedLinkedInUrl : url);
+    const rawTitle = cleanDatasetText(row.title || row.name || row.metadata?.title || "");
+    const title = isUrlLikeText(rawTitle) || isGoogleSearchWrapperUrl(rawTitle)
+      ? profileName ? `${profileName} LinkedIn profile` : "LinkedIn profile match"
+      : rawTitle || (profileName ? `${profileName} LinkedIn profile` : url || `Dataset row ${index + 1}`);
     const description = cleanDatasetText(row.description || row.summary || row.metadata?.description || "");
-    const company = cleanDatasetText(row.company || row.companyName || row.organization || row.siteName || row.domain || domain || `Dataset row ${index + 1}`);
-    const person = inferProfileName(row, title, company);
-    const profileUrl = rawProfileUrl !== "#"
+    const directCompany = cleanDatasetText(row.company || row.companyName || row.organization || row.siteName || row.domain || "");
+    const company = directCompany && !/^google\.com$/i.test(directCompany)
+      ? directCompany
+      : domain.includes("linkedin.com")
+        ? "LinkedIn profile"
+        : domain || `Dataset row ${index + 1}`;
+    const inferredPerson = inferProfileName(row, title, company);
+    const person = /linkedin profile|profile match/i.test(inferredPerson) ? profileName : inferredPerson || profileName;
+    const profileUrl = rawProfileUrl !== "#" && !isGoogleSearchWrapperUrl(rawProfileUrl)
       ? rawProfileUrl
-      : displayHostFromUrl(url).includes("linkedin.com")
+      : extractedLinkedInUrl !== "#"
+        ? extractedLinkedInUrl
+        : displayHostFromUrl(url).includes("linkedin.com")
         ? url
         : "#";
     const summaryText = [description, row.text, row.markdown].map((item) => cleanDatasetText(item)).filter(Boolean).join(" ");
-    const text = [person, title, summaryText, row.url, company].map((item) => cleanDatasetText(item)).filter(Boolean).join(" ");
+    const searchWrapperOnly = isGoogleSearchWrapperUrl(rawUrl) && extractedLinkedInUrl !== "#";
+    const text = [
+      person,
+      title,
+      searchWrapperOnly ? "" : summaryText,
+      searchWrapperOnly ? "" : row.url,
+      company,
+    ].map((item) => cleanDatasetText(item)).filter(Boolean).join(" ");
     const insights = {
       role: inferRole(row, title, text, company, person),
       recentActivity: inferRecentActivity(row, text, title),
@@ -1385,10 +1484,14 @@ function normalizeApifyRows(rows) {
     const lowered = text.toLowerCase();
     const evidence = uniqueCleanList([
       insights.skills,
-      ["linkedin", "hiring", "founder", "growth", "agent", "automation", "workflow", "scrape", "data", "llm", "crawler", "lead"].filter(
+      ["hiring", "founder", "growth", "agent", "automation", "workflow", "scrape", "data", "llm", "crawler", "lead", "marketplace", "finops"].filter(
         (word) => lowered.includes(word)
       ),
-    ], 6);
+    ], 6).filter((item) => !isPlatformNoise(item));
+    const cleanSummary = (summaryText || (searchWrapperOnly && profileUrl !== "#" ? "Public LinkedIn profile match from Apify search results." : title || text))
+      .replace(/https?:\/\/\S+/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
     return {
       source: cleanDatasetText(row.source || row.actor || "Apify dataset"),
       company,
@@ -1397,12 +1500,14 @@ function normalizeApifyRows(rows) {
       profileUrl,
       title,
       url,
-      summary: (summaryText || title || text).slice(0, 260) || "Structured row imported from an Apify dataset.",
-      evidence: evidence.length ? evidence : ["web data", "structured dataset"],
+      summary: cleanSummary.slice(0, 260) || (profileUrl !== "#" ? "Public LinkedIn profile URL imported from Apify results." : "Structured row imported from an Apify dataset."),
+      evidence: evidence.length ? evidence : profileUrl !== "#" ? ["profile match"] : ["web signal"],
       freshness: Number(row.freshness || row.score || 80),
       fit: Math.min(98, 72 + evidence.length * 5),
     };
-  });
+  })
+  .filter((signal) => signal.url !== "#" || signal.profileUrl !== "#")
+  .slice(0, 8);
 }
 
 function buildApifyInput(actorId, target, maxPages = 1) {
