@@ -599,6 +599,21 @@ button.btn-ghost:hover {
   line-height: 1.45;
 }
 
+.message-evidence {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #dfe5ed;
+  border-radius: 6px;
+  background: #fbfcfd;
+}
+
+.message-evidence p {
+  margin: 0;
+  color: #5f6672;
+}
+
 .muted,
 small {
   color: #7a7a7a;

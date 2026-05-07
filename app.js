@@ -44,9 +44,11 @@ const navItems = [
 const sampleApifySignals = [
   {
     source: "apify/website-content-crawler",
+    person: "Andrew Ng",
     company: "DeepLearning.AI",
     title: "Agent course and workflow signal",
     url: "https://www.deeplearning.ai/short-courses/",
+    profileUrl: "https://www.linkedin.com/in/andrewyng/",
     summary: "Recent education pages emphasize agent workflows, evaluation, and practical LLM deployment patterns.",
     evidence: ["agent", "workflow", "evaluation"],
     freshness: 96,
@@ -54,9 +56,11 @@ const sampleApifySignals = [
   },
   {
     source: "apify/google-search-scraper",
+    person: "Harjot Gill",
     company: "CodeRabbit",
     title: "AI code review automation signal",
     url: "https://www.coderabbit.ai/",
+    profileUrl: "https://www.linkedin.com/company/coderabbitai/",
     summary: "Public pages and search context point to code-review automation, pull request context, and developer productivity.",
     evidence: ["code review", "automation", "developer productivity"],
     freshness: 84,
@@ -64,9 +68,11 @@ const sampleApifySignals = [
   },
   {
     source: "apify/website-content-crawler",
+    person: "Sudhir Jha",
     company: "Smallest.AI",
     title: "Voice agent latency positioning",
     url: "https://smallest.ai/",
+    profileUrl: "https://www.linkedin.com/company/smallest-ai/",
     summary: "Product copy highlights low-latency voice agents and customer-facing automation.",
     evidence: ["voice agent", "latency", "automation"],
     freshness: 80,
@@ -407,6 +413,7 @@ const seedIntegrations = {
   hubspot: false,
   slack: false,
   apify: false,
+  linkedin: false,
 };
 
 const seedUsers = [
@@ -1190,23 +1197,88 @@ function displayHostFromUrl(url) {
   }
 }
 
+function inferProfileName(row, title, company) {
+  const direct = cleanDatasetText(row.person || row.fullName || row.profileName || row.author || row.name || "");
+  if (direct && direct !== title && direct !== company && direct.length < 80) return direct;
+  const cleanedTitle = title.replace(/\s*\|\s*LinkedIn.*$/i, "").trim();
+  const firstTitlePart = cleanedTitle.split(/\s[-–|]\s/)[0]?.trim() || "";
+  if (firstTitlePart && firstTitlePart !== company && firstTitlePart.length < 60) return firstTitlePart;
+  return "";
+}
+
+function firstNameFromProfileName(name) {
+  const first = cleanDatasetText(name).split(/\s+/)[0] || "";
+  return first || "there";
+}
+
+function sentenceWithPeriod(text) {
+  const clean = cleanDatasetText(text);
+  if (!clean) return "";
+  return /[.!?]$/.test(clean) ? clean : `${clean}.`;
+}
+
+function buildPersonalizedDraft(signal, campaign) {
+  const person = cleanDatasetText(signal.person || signal.contact || "");
+  const firstName = firstNameFromProfileName(person);
+  const company = cleanDatasetText(signal.company || "your team");
+  const title = cleanDatasetText(signal.title || "the public signal I found")
+    .replace(/\s*\|\s*LinkedIn.*$/i, "")
+    .replace(person, "")
+    .replace(company, "")
+    .replace(/\s[-–|]\s/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const summary = cleanDatasetText(signal.summary || "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(person, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 190)
+    .replace(/\.$/, "");
+  const evidence = (signal.evidence || []).slice(0, 2).map(cleanDatasetText).filter(Boolean);
+  const campaignObjective = cleanDatasetText(campaign?.objective || "");
+  const usefulObjective = campaignObjective.length > 18 ? campaignObjective : "";
+  const sourceHost = displayHostFromUrl(signal.profileUrl || signal.url || "");
+  const sourceLine = sourceHost ? `I found this from ${sourceHost}` : "I found this in public web data";
+  const evidenceLine = evidence.length ? ` around ${evidence.join(" and ")}` : "";
+  const context = summary || title || "your recent profile activity";
+
+  return [
+    `Hi ${firstName},`,
+    `${sourceLine} and noticed ${company} has a fresh signal${evidenceLine}: ${context}.`,
+    `That stood out because ${sentenceWithPeriod(usefulObjective || "it looks like a timely reason to start a relevant conversation instead of sending a generic cold note")}`,
+    "Worth a quick compare-notes chat this week?",
+  ].join("\n\n");
+}
+
 function normalizeApifyRows(rows) {
   return rows.slice(0, 8).map((row, index) => {
     const url = safeDatasetUrl(row.url || row.link || row.loadedUrl || row.canonicalUrl || "#");
+    const rawProfileUrl = safeDatasetUrl(row.linkedinUrl || row.profileUrl || row.profile || row.publicProfileUrl || "#");
     const domain = displayHostFromUrl(url);
     const title = cleanDatasetText(row.title || row.name || row.metadata?.title || url || `Dataset row ${index + 1}`);
     const description = cleanDatasetText(row.description || row.summary || row.metadata?.description || "");
-    const text = [title, description, row.text, row.markdown, row.url, row.company].map((item) => cleanDatasetText(item)).filter(Boolean).join(" ");
+    const company = cleanDatasetText(row.company || row.companyName || row.organization || row.siteName || row.domain || domain || `Dataset row ${index + 1}`);
+    const person = inferProfileName(row, title, company);
+    const profileUrl = rawProfileUrl !== "#"
+      ? rawProfileUrl
+      : displayHostFromUrl(url).includes("linkedin.com")
+        ? url
+        : "#";
+    const summaryText = [description, row.text, row.markdown].map((item) => cleanDatasetText(item)).filter(Boolean).join(" ");
+    const text = [person, title, summaryText, row.url, company].map((item) => cleanDatasetText(item)).filter(Boolean).join(" ");
     const lowered = text.toLowerCase();
-    const evidence = ["agent", "automation", "workflow", "scrape", "data", "llm", "crawler", "lead"].filter(
+    const evidence = ["linkedin", "hiring", "founder", "growth", "agent", "automation", "workflow", "scrape", "data", "llm", "crawler", "lead"].filter(
       (word) => lowered.includes(word)
     );
     return {
       source: cleanDatasetText(row.source || row.actor || "Apify dataset"),
-      company: cleanDatasetText(row.company || row.siteName || row.domain || domain || `Dataset row ${index + 1}`),
+      company,
+      person,
+      profileUrl,
       title,
       url,
-      summary: text.slice(0, 260) || "Structured row imported from an Apify dataset.",
+      summary: (summaryText || title || text).slice(0, 260) || "Structured row imported from an Apify dataset.",
       evidence: evidence.length ? evidence : ["web data", "structured dataset"],
       freshness: Number(row.freshness || row.score || 80),
       fit: Math.min(98, 72 + evidence.length * 5),
@@ -1972,7 +2044,8 @@ function messageDetailPage(messageId) {
   const session = getSession();
   const state = getAppState();
   const message = state.messages.find((m) => m.id === messageId);
-  const linkedInConnected = state.integrations?.apify;
+  const apifyConnected = state.integrations?.apify;
+  const linkedInConnected = !!state.integrations?.linkedin;
 
   if (!message) {
     return workspacePage(
@@ -1992,17 +2065,17 @@ function messageDetailPage(messageId) {
   const actions = [];
   if (message.folder !== "approved") {
     actions.push(
-      `<button class="btn" data-action="message-action" data-id="${message.id}" data-decision="approve" ${linkedInConnected ? "" : "disabled"} title="${linkedInConnected ? "" : "Connect Apify data connector to approve"}">Approve</button>`
+      `<button class="btn" data-action="message-action" data-id="${message.id}" data-decision="approve" ${apifyConnected ? "" : "disabled"} title="${apifyConnected ? "" : "Run Apify first to generate a reviewable draft"}">Approve draft</button>`
     );
   }
   if (message.folder !== "scheduled") {
     actions.push(
-      `<button class="btn" data-action="message-action" data-id="${message.id}" data-decision="schedule" ${linkedInConnected ? "" : "disabled"} title="${linkedInConnected ? "" : "Connect Apify data connector to schedule"}">Schedule now</button>`
+      `<button class="btn" data-action="message-action" data-id="${message.id}" data-decision="schedule" ${apifyConnected ? "" : "disabled"} title="${apifyConnected ? "" : "Run Apify first to generate a reviewable draft"}">Schedule review</button>`
     );
   }
   if (message.folder !== "sent") {
     actions.push(
-      `<button class="btn" data-action="message-action" data-id="${message.id}" data-decision="send" ${linkedInConnected ? "" : "disabled"} title="${linkedInConnected ? "" : "Connect Apify data connector to send"}">Send now</button>`
+      `<button class="btn" data-action="message-action" data-id="${message.id}" data-decision="send" ${apifyConnected ? "" : "disabled"} title="${linkedInConnected ? "Send through connected LinkedIn" : "LinkedIn is not connected; this marks the reviewed draft as manually sent"}">${linkedInConnected ? "Send on LinkedIn" : "Mark sent"}</button>`
     );
   }
   if (message.folder !== "archived") {
@@ -2010,6 +2083,10 @@ function messageDetailPage(messageId) {
       `<button class="btn btn-ghost" data-action="message-action" data-id="${message.id}" data-decision="archive">Archive</button>`
     );
   }
+
+  const evidence = message.personalization?.evidence || [];
+  const profileUrl = message.profileUrl && message.profileUrl !== "#" ? message.profileUrl : "";
+  const sourceUrl = message.sourceUrl && message.sourceUrl !== "#" ? message.sourceUrl : "";
 
   return workspacePage(
     "messages",
@@ -2020,12 +2097,30 @@ function messageDetailPage(messageId) {
         <span class="chip">${message.channel}</span>
         <span class="status-pill ${message.folder === "inbox" ? "warn" : "active"}">${message.status}</span>
       </div>
+      <div class="connector-notice">
+        <strong>LinkedIn ${linkedInConnected ? "connected" : "not connected"}.</strong>
+        ${linkedInConnected ? "Send actions can use the connected account." : "This workspace can draft and review from Apify data, but final LinkedIn sending is currently a manual/mark-sent step."}
+      </div>
       <p class="muted">Template: ${message.template}</p>
       <div class="list-item message-detail">${message.body}</div>
+      ${
+        message.personalization
+          ? `<div class="message-evidence">
+              <strong>Personalization basis</strong>
+              <span>${attrSafe(message.personalization.signal || "Imported public profile signal")}</span>
+              <p>${attrSafe(message.personalization.summary || "Draft generated from the imported Apify dataset row.")}</p>
+              <div class="tag-row">${evidence.map((tag) => `<span class="chip">${attrSafe(tag)}</span>`).join("")}</div>
+              <div class="row">
+                ${profileUrl ? `<a class="btn btn-ghost" href="${attrSafe(profileUrl)}" target="_blank" rel="noopener noreferrer">Open LinkedIn/source profile</a>` : ""}
+                ${sourceUrl && sourceUrl !== profileUrl ? `<a class="btn btn-ghost" href="${attrSafe(sourceUrl)}" target="_blank" rel="noopener noreferrer">Open source</a>` : ""}
+              </div>
+            </div>`
+          : ""
+      }
       <div class="form-footer" style="margin-top:12px;">${actions.join("")}</div>
       <div class="small muted" style="margin-top:8px;"><a href="#/workspace/${state.workspace.id}/messages">Back to inbox</a></div>
       ${
-        linkedInConnected
+        apifyConnected
           ? ""
           : `<p class="small muted" style="margin-top:10px;">Actions are disabled until Apify data connector is connected.</p>`
       }
@@ -2298,6 +2393,18 @@ function settingsPage(section = "company") {
         </div>
         <div class="list-item">
           <div class="toolbar">
+            <strong>LinkedIn sending</strong>
+            <span class="chip">${state.integrations.linkedin ? "Connected" : "Not connected"}</span>
+          </div>
+          <p class="muted">Drafts are generated from Apify profile/source data. Actual LinkedIn sending requires a connected LinkedIn account; otherwise use Mark sent after manual review.</p>
+          <div style="margin-top:6px;">
+            <button class="btn" data-action="toggle-integration" data-provider="linkedin">
+              ${state.integrations.linkedin ? "Disconnect" : "Mark LinkedIn connected"}
+            </button>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="toolbar">
             <strong>HubSpot</strong>
             <span class="chip">${state.integrations.hubspot ? "Connected" : "Disconnected"}</span>
           </div>
@@ -2456,8 +2563,8 @@ function connectApifyPage(query = new URLSearchParams()) {
         <div class="apify-flow-grid">
           <div class="apify-flow-step">
             <span>1</span>
-            <strong>Actor</strong>
-            <p>${attrSafe(selectedActorConfig.helper)}</p>
+            <strong>Profile lookup</strong>
+            <p>${attrSafe(selectedActorConfig.helper)} Paste a LinkedIn profile URL or search query when you want a person-level draft.</p>
           </div>
           <div class="apify-flow-step">
             <span>2</span>
@@ -2466,8 +2573,8 @@ function connectApifyPage(query = new URLSearchParams()) {
           </div>
           <div class="apify-flow-step">
             <span>3</span>
-            <strong>Agent action</strong>
-            <p>Imported rows become prospects, inbox items, approvals, and campaign-ready context.</p>
+            <strong>Draft for review</strong>
+            <p>Imported rows become LinkedIn draft messages with source evidence for you to review before sending.</p>
           </div>
         </div>
 
@@ -2477,8 +2584,8 @@ function connectApifyPage(query = new URLSearchParams()) {
             <select name="actorId" id="apify-actor-select">${actorOptionsHtml}</select>
           </label>
           <label class="field apify-target-field">
-            <span>Target URL or search query</span>
-            <input name="target" id="apify-target" value="${attrSafe(target)}" placeholder="${APIFY_DEFAULT_TARGET}" />
+            <span>LinkedIn profile URL or search query</span>
+            <input name="target" id="apify-target" value="${attrSafe(target)}" placeholder="linkedin.com/in/person or site:linkedin.com/in founder AWS credits" />
           </label>
           <label class="field apify-pages-field">
             <span>Pages</span>
@@ -2535,6 +2642,12 @@ function connectServicePage(provider = "hubspot", query = new URLSearchParams())
       external: true,
       description:
         "Use the Apify Console to choose an Actor, then return here to mark the connector active in this local copy.",
+    },
+    linkedin: {
+      label: "LinkedIn sending",
+      external: false,
+      description:
+        "This demo can generate reviewable LinkedIn drafts from Apify profile/source data. Real LinkedIn sending is not connected unless you provide a compliant LinkedIn auth/session integration.",
     },
   };
   const providerKey = providers[provider] ? provider : "hubspot";
@@ -2709,6 +2822,7 @@ function routeParser(route) {
 
   if (first === "connect-hubspot") return { page: "connect-service", provider: "hubspot" };
   if (first === "connect-slack") return { page: "connect-service", provider: "slack" };
+  if (first === "connect-linkedin") return { page: "connect-service", provider: "linkedin" };
   if (first === "connect-apify") return { page: "connect-service", provider: "apify" };
   if (first === "test") return { page: "test" };
   if (first === "auth" && parts[1]) return { page: "auth", provider: parts[1], action: parts[2] || "callback" };
@@ -3002,34 +3116,47 @@ function handleProspectImport(campaignId = "") {
   updateState((draft) => {
     const signal = (draft.apifySignals || sampleApifySignals)[0] || sampleApifySignals[0];
     const id = `p_${Date.now()}`;
-    const name = `${signal.company} Signal`;
     const targetCampaign =
       draft.campaigns.find((campaign) => campaign.id === campaignId) ||
       draft.campaigns[0] ||
       null;
     campaignName = targetCampaign?.name || "";
+    const person = cleanDatasetText(signal.person || "");
+    const company = cleanDatasetText(signal.company || "Unknown company");
+    const name = person || `${company} Signal`;
+    const personalizedDraft = buildPersonalizedDraft(signal, targetCampaign);
+    const profileUrl = signal.profileUrl && signal.profileUrl !== "#" ? signal.profileUrl : signal.url;
     draft.integrations.apify = true;
     draft.prospects.unshift({
       id,
       name,
-      title: "Live-data prospect",
-      company: signal.company,
+      title: person ? "LinkedIn-sourced prospect" : "Live-data prospect",
+      company,
       score: Math.min(99, scoreApifySignal(signal)),
       status: "Qualified",
       statusType: "active",
+      profileUrl,
     });
     draft.messages.unshift({
       id: `m_${Date.now()}`,
       prospectId: id,
       prospect: name,
-      channel: "Actor Run",
-      status: "Awaiting Response",
+      channel: "LinkedIn Draft",
+      status: "Draft for Review",
       priority: "High",
       folder: "inbox",
       last: "just now",
-      template: "Live signal opener",
-      body: `Saw fresh activity around ${signal.title}. Worth a short, personalized outreach sequence.`,
+      template: "Personalized LinkedIn opener",
+      body: personalizedDraft,
       campaignId: targetCampaign?.id || "cmp_01",
+      sourceUrl: signal.url,
+      profileUrl,
+      personalization: {
+        signal: signal.title,
+        summary: signal.summary,
+        evidence: signal.evidence || [],
+        source: signal.source || "Apify dataset",
+      },
     });
     if (targetCampaign) {
       targetCampaign.prospects = Number(targetCampaign.prospects || 0) + 1;
@@ -3050,7 +3177,12 @@ function handleProspectImport(campaignId = "") {
 }
 
 function handleIntegrationToggle(provider) {
-  const normalized = provider === "hubspot" ? "hubspot" : provider === "slack" ? "slack" : provider === "apify" ? "apify" : "hubspot";
+  const normalized =
+    provider === "hubspot" ? "hubspot" :
+    provider === "slack" ? "slack" :
+    provider === "apify" ? "apify" :
+    provider === "linkedin" ? "linkedin" :
+    "hubspot";
   updateState((draft) => {
     draft.integrations[normalized] = !draft.integrations[normalized];
     if (normalized === "apify") {
@@ -3061,7 +3193,7 @@ function handleIntegrationToggle(provider) {
       };
     }
   });
-  const labels = { apify: "Apify data connector", hubspot: "HubSpot", slack: "Slack" };
+  const labels = { apify: "Apify data connector", hubspot: "HubSpot", slack: "Slack", linkedin: "LinkedIn sending" };
   flash(`${labels[normalized]} ${getAppState().integrations[normalized] ? "connected" : "disconnected"}`);
   render();
 }
@@ -3085,10 +3217,13 @@ async function refreshApifyStatus(statusNode) {
 }
 
 async function runApifyActor(form, button) {
-  const actorId = form?.querySelector("[name='actorId']")?.value || apifyActorOptions[0].id;
+  let actorId = form?.querySelector("[name='actorId']")?.value || apifyActorOptions[0].id;
   const target = form?.querySelector("[name='target']")?.value.trim() || APIFY_DEFAULT_TARGET;
   const maxPages = form?.querySelector("[name='maxPages']")?.value || 1;
   const previousText = button?.textContent || "Run Apify Actor";
+  if (actorId === "apify/website-content-crawler" && /linkedin\.com\/in|site:linkedin\.com\/in/i.test(target)) {
+    actorId = "apify/google-search-scraper";
+  }
 
   if (button) {
     button.disabled = true;

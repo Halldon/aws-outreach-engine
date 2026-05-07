@@ -104,6 +104,7 @@ async function resolveStaticFile(urlPath) {
     'setup-account',
     'connect-hubspot',
     'connect-slack',
+    'connect-linkedin',
     'connect-apify',
     'auth',
     'workspace',
