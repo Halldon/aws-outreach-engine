@@ -41,45 +41,6 @@ const navItems = [
   { key: "web-visitors", label: "Web Visitors", path: "web-visitors", visible: false },
 ];
 
-const sampleApifySignals = [
-  {
-    source: "apify/website-content-crawler",
-    person: "Andrew Ng",
-    company: "DeepLearning.AI",
-    title: "Agent course and workflow signal",
-    url: "https://www.deeplearning.ai/short-courses/",
-    profileUrl: "https://www.linkedin.com/in/andrewyng/",
-    summary: "Recent education pages emphasize agent workflows, evaluation, and practical LLM deployment patterns.",
-    evidence: ["agent", "workflow", "evaluation"],
-    freshness: 96,
-    fit: 92,
-  },
-  {
-    source: "apify/google-search-scraper",
-    person: "Harjot Gill",
-    company: "CodeRabbit",
-    title: "AI code review automation signal",
-    url: "https://www.coderabbit.ai/",
-    profileUrl: "https://www.linkedin.com/company/coderabbitai/",
-    summary: "Public pages and search context point to code-review automation, pull request context, and developer productivity.",
-    evidence: ["code review", "automation", "developer productivity"],
-    freshness: 84,
-    fit: 88,
-  },
-  {
-    source: "apify/website-content-crawler",
-    person: "Sudhir Jha",
-    company: "Smallest.AI",
-    title: "Voice agent latency positioning",
-    url: "https://smallest.ai/",
-    profileUrl: "https://www.linkedin.com/company/smallest-ai/",
-    summary: "Product copy highlights low-latency voice agents and customer-facing automation.",
-    evidence: ["voice agent", "latency", "automation"],
-    freshness: 80,
-    fit: 84,
-  },
-];
-
 const sidebarSupportLinks = [];
 
 function sidebarLinkClass(isActive) {
@@ -475,7 +436,7 @@ const INITIAL_STATE = cloneValue({
   templates: seedTemplates,
   warmLists: seedWarmLists,
   studioDrafts: seedStudioDrafts,
-  apifySignals: sampleApifySignals,
+  apifySignals: [],
   integrations: seedIntegrations,
   webVisitors: seedWebVisitors,
   apifyRun: {
@@ -570,6 +531,21 @@ function mergeSeededRows(rows, seedRows) {
 function normalizeState(rawState = {}) {
   const base = cloneValue(INITIAL_STATE);
   const cleanedState = scrubLegacyBrand(rawState);
+  const rawApifyRun = {
+    ...base.apifyRun,
+    ...(cleanedState.apifyRun || {}),
+  };
+  const hadLegacyFallbackRun =
+    rawApifyRun.status === "sample" ||
+    /dataset is loaded|offline demo/i.test(rawApifyRun.error || "");
+  const apifyRun = hadLegacyFallbackRun
+    ? {
+        ...rawApifyRun,
+        status: "idle",
+        lastItemCount: 0,
+        error: "",
+      }
+    : rawApifyRun;
   const resolvedApprovalIds = Array.isArray(cleanedState.resolvedApprovalIds)
     ? cleanedState.resolvedApprovalIds
     : base.resolvedApprovalIds;
@@ -590,11 +566,12 @@ function normalizeState(rawState = {}) {
     templates: Array.isArray(cleanedState.templates) ? cleanedState.templates : base.templates,
     warmLists: Array.isArray(cleanedState.warmLists) ? cleanedState.warmLists : base.warmLists,
     studioDrafts: Array.isArray(cleanedState.studioDrafts) ? cleanedState.studioDrafts : base.studioDrafts,
-    apifySignals: Array.isArray(cleanedState.apifySignals) ? cleanedState.apifySignals : base.apifySignals,
-    apifyRun: {
-      ...base.apifyRun,
-      ...(cleanedState.apifyRun || {}),
-    },
+    apifySignals: hadLegacyFallbackRun
+      ? []
+      : Array.isArray(cleanedState.apifySignals)
+        ? cleanedState.apifySignals
+        : base.apifySignals,
+    apifyRun,
     activity: {
       ...base.activity,
       ...(cleanedState.activity || {}),
@@ -1389,15 +1366,40 @@ function extractApifyItems(payload) {
 function apifyRunLabel(run) {
   if (run?.status === "running") return "Running";
   if (run?.status === "success") return `${run.lastItemCount || 0} rows imported`;
-  if (run?.status === "sample") return "Sample dataset loaded";
+  if (run?.status === "empty") return "No rows found";
   if (run?.status === "error") return "Needs attention";
   return "Ready";
 }
 
 function renderApifyPanel(state) {
-  const signals = (state.apifySignals || sampleApifySignals)
+  const signals = (Array.isArray(state.apifySignals) ? state.apifySignals : [])
     .map((signal) => ({ ...signal, score: scoreApifySignal(signal) }))
     .sort((a, b) => b.score - a.score);
+  const signalCards = signals.length
+    ? signals
+        .slice(0, 3)
+        .map(
+          (signal) => `
+            <div class="metric-card">
+              <div class="metric-content">
+                <div class="row" style="justify-content:space-between;">
+                  <strong>${attrSafe(signal.company)}</strong>
+                  <span class="status-pill active">${signal.score}</span>
+                </div>
+                <div class="small muted">${attrSafe(signal.title)}</div>
+                <div class="tag-row">${(signal.evidence || []).map((tag) => `<span class="chip">${attrSafe(tag)}</span>`).join("")}</div>
+                <a class="small" href="${attrSafe(signal.url)}" target="_blank" rel="noopener noreferrer">Open source</a>
+              </div>
+            </div>
+          `
+        )
+        .join("")
+    : `<div class="metric-card live-empty-card">
+        <div class="metric-content">
+          <strong>No live lead data yet</strong>
+          <div class="small muted">Open a campaign and run Find leads to populate this area with real Apify results.</div>
+        </div>
+      </div>`;
   return `
     <div class="panel live-signal-panel" style="margin-top:16px;">
       <div class="toolbar">
@@ -1411,26 +1413,9 @@ function renderApifyPanel(state) {
         </div>
       </div>
       <div class="split">
-        ${signals
-          .slice(0, 3)
-          .map(
-            (signal) => `
-              <div class="metric-card">
-                <div class="metric-content">
-                  <div class="row" style="justify-content:space-between;">
-                    <strong>${attrSafe(signal.company)}</strong>
-                    <span class="status-pill active">${signal.score}</span>
-                  </div>
-                  <div class="small muted">${attrSafe(signal.title)}</div>
-                  <div class="tag-row">${signal.evidence.map((tag) => `<span class="chip">${attrSafe(tag)}</span>`).join("")}</div>
-                  <a class="small" href="${attrSafe(signal.url)}" target="_blank" rel="noopener noreferrer">Open source</a>
-                </div>
-              </div>
-            `
-          )
-          .join("")}
+        ${signalCards}
       </div>
-      <p class="small muted" style="margin:12px 0 0;">Live refresh uses Apify Actors when APIFY_TOKEN is configured; sample signals keep offline demos reliable.</p>
+      <p class="small muted" style="margin:12px 0 0;">Live refresh uses Apify Actors when APIFY_TOKEN is configured.</p>
     </div>
   `;
 }
@@ -1639,6 +1624,7 @@ function campaignDetailPage(id) {
   const nextApprovals = state.approvals.filter((approval) => approval.campaignId === campaign.id);
   const connected = !!state.integrations.apify;
   const run = state.apifyRun || {};
+  const hasLiveSignals = Array.isArray(state.apifySignals) && state.apifySignals.length > 0;
   const selectedActor = run.actorId || apifyActorOptions[0].id;
   const selectedActorConfig = apifyActorOptions.find((actor) => actor.id === selectedActor) || apifyActorOptions[0];
   const target = run.target || "";
@@ -1713,13 +1699,9 @@ function campaignDetailPage(id) {
             <strong>${attrSafe(selectedActorConfig.label)}</strong>
             <div class="small muted">${attrSafe(selectedActorConfig.helper)} LinkedIn profile searches automatically use the search scraper.</div>
           </div>
-          <button class="btn btn-primary" data-action="import-prospect" data-campaign-id="${attrSafe(campaign.id)}">Import top lead to inbox</button>
+          <button class="btn btn-primary" data-action="import-prospect" data-campaign-id="${attrSafe(campaign.id)}" ${hasLiveSignals ? "" : "disabled"} title="${hasLiveSignals ? "" : "Run Find leads first; import unlocks after live rows return."}">Import top lead to inbox</button>
         </div>
-        ${
-          run.error
-            ? `<div class="connector-notice"><strong>Last run:</strong> ${attrSafe(run.error)}</div>`
-            : ""
-        }
+        ${run.error ? `<div class="connector-notice"><strong>Run needs attention.</strong> ${attrSafe(run.error)}</div>` : ""}
         <div class="apify-signal-grid campaign-signal-grid">
           ${renderApifySignalCards(state)}
         </div>
@@ -2639,9 +2621,18 @@ function settingsPage(section = "company") {
 }
 
 function renderApifySignalCards(state) {
-  const signals = (state.apifySignals || sampleApifySignals)
+  const signals = (Array.isArray(state.apifySignals) ? state.apifySignals : [])
     .map((signal) => ({ ...signal, score: scoreApifySignal(signal) }))
     .sort((a, b) => b.score - a.score);
+
+  if (!signals.length) {
+    return `
+      <div class="apify-empty-state">
+        <strong>No live leads yet</strong>
+        <p class="small muted">Run Find leads with a LinkedIn/profile URL or search query. Nothing is imported until real Apify rows return.</p>
+      </div>
+    `;
+  }
 
   return signals
     .slice(0, 6)
@@ -2670,6 +2661,7 @@ function connectApifyPage(query = new URLSearchParams()) {
   const state = getAppState();
   const connected = !!state.integrations.apify;
   const run = state.apifyRun || {};
+  const hasLiveSignals = Array.isArray(state.apifySignals) && state.apifySignals.length > 0;
   const campaignId = query?.get("campaign") || "";
   const campaign = campaignId ? state.campaigns.find((item) => item.id === campaignId) : null;
   const selectedActor = run.actorId || apifyActorOptions[0].id;
@@ -2701,7 +2693,7 @@ function connectApifyPage(query = new URLSearchParams()) {
             <span class="chip">${apifyRunLabel(run)}</span>
           </div>
         </div>
-        <p class="muted apify-workspace-copy">Run an Apify Actor, normalize the dataset rows, and create reviewable LinkedIn-style draft messages from the best signal.${campaign ? " Imported rows return directly to this campaign inbox." : ""}</p>
+        <p class="muted apify-workspace-copy">Run Apify, normalize the dataset rows, and create reviewable LinkedIn-style draft messages from the best signal.${campaign ? " Imported rows return directly to this campaign inbox." : ""}</p>
 
         <form id="apify-run-form" class="apify-run-form" onsubmit="return false;">
           <label class="field">
@@ -2727,7 +2719,7 @@ function connectApifyPage(query = new URLSearchParams()) {
 
         ${
           run.error
-            ? `<div class="connector-notice"><strong>Last run:</strong> ${attrSafe(run.error)}</div>`
+            ? `<div class="connector-notice"><strong>Run needs attention.</strong> ${attrSafe(run.error)}</div>`
             : ""
         }
       </section>
@@ -2760,9 +2752,9 @@ function connectApifyPage(query = new URLSearchParams()) {
         <div class="toolbar apify-results-head">
           <div>
             <h3>Dataset signals</h3>
-            <div class="small muted">${run.lastRunAt ? `Last live run ${attrSafe(run.lastRunAt)}` : "Run the Actor to replace these seeded examples with live Apify rows."}</div>
+            <div class="small muted">${run.lastRunAt ? `Last live run ${attrSafe(run.lastRunAt)}` : "Run Find leads to populate this with live Apify rows."}</div>
           </div>
-          <button class="btn btn-ghost" data-action="import-prospect" data-campaign-id="${attrSafe(campaignId)}">Import top signal${campaign ? " to campaign" : ""}</button>
+          <button class="btn btn-ghost" data-action="import-prospect" data-campaign-id="${attrSafe(campaignId)}" ${hasLiveSignals ? "" : "disabled"} title="${hasLiveSignals ? "" : "Run Find leads first; import unlocks after live rows return."}">Import top signal${campaign ? " to campaign" : ""}</button>
         </div>
         <div class="apify-signal-grid">
           ${renderApifySignalCards(state)}
@@ -3263,9 +3255,17 @@ function handleWarmListSubmit(form) {
 }
 
 function handleProspectImport(campaignId = "") {
+  const availableSignals = Array.isArray(getAppState().apifySignals) ? getAppState().apifySignals : [];
+  if (!availableSignals.length) {
+    flash("Run Find leads first. No prospect was imported because Apify has not returned live rows yet.");
+    render();
+    return;
+  }
+
   let campaignName = "";
   updateState((draft) => {
-    const signal = (draft.apifySignals || sampleApifySignals)[0] || sampleApifySignals[0];
+    const signal = (Array.isArray(draft.apifySignals) ? draft.apifySignals : [])[0];
+    if (!signal) return;
     const id = `p_${Date.now()}`;
     const targetCampaign =
       draft.campaigns.find((campaign) => campaign.id === campaignId) ||
@@ -3340,7 +3340,7 @@ function handleIntegrationToggle(provider) {
     if (normalized === "apify") {
       draft.apifyRun = {
         ...(draft.apifyRun || INITIAL_STATE.apifyRun),
-        status: draft.integrations[normalized] ? draft.apifyRun?.status || "sample" : "idle",
+        status: draft.integrations[normalized] ? draft.apifyRun?.status || "idle" : "idle",
         error: "",
       };
     }
@@ -3409,17 +3409,16 @@ async function runApifyActor(form, button) {
     if (!response.ok) throw new Error(payload.error || "Apify run failed.");
 
     const rows = extractApifyItems(payload);
-    const normalizedRows = normalizeApifyRows(rows.length ? rows : sampleApifySignals);
+    const normalizedRows = normalizeApifyRows(rows);
     updateState((draft) => {
       draft.apifySignals = normalizedRows;
       draft.integrations.apify = true;
-      draft.apifySampleLoaded = false;
       draft.apifyRun = {
         ...(draft.apifyRun || INITIAL_STATE.apifyRun),
         actorId,
         target,
         maxPages: Math.min(5, Math.max(1, Number(maxPages) || 1)),
-        status: "success",
+        status: normalizedRows.length ? "success" : "empty",
         lastRunAt: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
         lastItemCount: normalizedRows.length,
         tokenConfigured: true,
@@ -3432,29 +3431,31 @@ async function runApifyActor(form, button) {
         liveRowsImported: Number(draft.activity?.liveRowsImported || 0) + normalizedRows.length,
       };
     });
-    flash(`Apify Actor returned ${normalizedRows.length} dataset rows.`);
+    flash(normalizedRows.length ? `Apify returned ${normalizedRows.length} dataset rows.` : "Apify completed but returned no rows.");
     render();
   } catch (error) {
     const message =
       error.name === "AbortError"
-        ? "Apify Actor run took longer than 45 seconds."
-        : error.message;
+        ? "Apify timed out before returning results. Try fewer pages or a more specific profile/search."
+        : error.message || "Apify failed before returning results.";
     updateState((draft) => {
-      draft.apifySignals = sampleApifySignals;
-      draft.apifySampleLoaded = true;
-      draft.integrations.apify = true;
+      const hasPreviousLiveRows =
+        Array.isArray(draft.apifySignals) &&
+        draft.apifySignals.length > 0 &&
+        draft.apifyRun?.status === "success";
+      if (!hasPreviousLiveRows) draft.apifySignals = [];
       draft.apifyRun = {
         ...(draft.apifyRun || INITIAL_STATE.apifyRun),
         actorId,
         target,
         maxPages: Math.min(5, Math.max(1, Number(maxPages) || 1)),
-        status: "sample",
-        lastItemCount: sampleApifySignals.length,
+        status: "error",
+        lastItemCount: hasPreviousLiveRows ? Number(draft.apifyRun?.lastItemCount || draft.apifySignals.length) : 0,
         tokenConfigured: message.includes("Missing APIFY_TOKEN") ? false : draft.apifyRun?.tokenConfigured ?? null,
-        error: `${message} Sample dataset is loaded so the demo can continue.`,
+        error: message,
       };
     });
-    flash(`${message} Sample dataset loaded.`);
+    flash(message);
     render();
   } finally {
     window.clearTimeout(timeoutId);

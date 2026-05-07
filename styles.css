@@ -2936,6 +2936,23 @@ button[type="submit"] {
   margin-top: auto;
 }
 
+.apify-empty-state {
+  grid-column: 1 / -1;
+  min-height: 128px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed #cfd6df;
+  border-radius: 4px;
+  padding: 16px;
+  background: #fbfcfd;
+}
+
+.apify-empty-state p {
+  margin: 0;
+}
+
 @media (max-width: 1180px) {
   .dashboard-metric-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
