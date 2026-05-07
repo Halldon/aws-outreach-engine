@@ -1691,12 +1691,19 @@ function campaignDetailPage(id) {
   const nextApprovals = state.approvals.filter((approval) => approval.campaignId === campaign.id);
   const connected = !!state.integrations.apify;
   const run = state.apifyRun || {};
+  const runBelongsToCampaign = run.campaignId === campaign.id;
   const hasLiveSignals = Array.isArray(state.apifySignals) && state.apifySignals.length > 0;
+  const hasCampaignLiveSignals = hasLiveSignals && runBelongsToCampaign && run.status === "success";
+  const hasCampaignDrafts = campaignMessages.length > 0;
   const selectedActor = run.actorId || apifyActorOptions[0].id;
   const selectedActorConfig = apifyActorOptions.find((actor) => actor.id === selectedActor) || apifyActorOptions[0];
-  const target = run.target || "";
+  const campaignSearchTarget = `site:linkedin.com/in ${campaign.scope || campaign.name} ${campaign.objective || ""}`.replace(/\s+/g, " ").trim();
+  const target = runBelongsToCampaign && run.target ? run.target : campaignSearchTarget;
   const tokenLabel =
     run.tokenConfigured === true ? "API token ready" : run.tokenConfigured === false ? "API token missing" : "Checking token";
+  const reviewHref = hasCampaignDrafts
+    ? `#/workspace/${state.workspace.id}/messages/${campaignMessages[0].id}`
+    : `#/workspace/${state.workspace.id}/messages/inbox?campaign=${campaign.id}`;
   const actorOptionsHtml = apifyActorOptions
     .map(
       (actor) =>
@@ -1723,14 +1730,31 @@ function campaignDetailPage(id) {
           ${metricCard("Reply %", campaign.replies)}
           ${metricCard("Pending approvals", nextApprovals.length)}
         </div>
+        <div class="campaign-click-path" aria-label="Campaign next actions">
+          <div class="campaign-click-step active">
+            <span>1</span>
+            <strong>Find leads</strong>
+            <small>${runBelongsToCampaign && run.status === "running" ? "Running now" : "Ready"}</small>
+          </div>
+          <div class="campaign-click-step ${hasCampaignLiveSignals ? "active" : ""}">
+            <span>2</span>
+            <strong>Import lead</strong>
+            <small>${hasCampaignLiveSignals ? "Ready" : "After results"}</small>
+          </div>
+          <div class="campaign-click-step ${hasCampaignDrafts ? "active" : ""}">
+            <span>3</span>
+            <strong>Review draft</strong>
+            <small>${hasCampaignDrafts ? "Ready" : "After import"}</small>
+          </div>
+        </div>
         <div class="toolbar campaign-actions" style="margin-top: 14px;">
-          <button class="btn ${isActive ? "btn-ghost" : "btn-primary"}" data-action="toggle-campaign" data-id="${campaign.id}" data-status="${nextCampaignStatus}">${campaignActionLabel}</button>
+          <button class="btn ${isActive ? "btn-ghost" : "btn"}" data-action="toggle-campaign" data-id="${campaign.id}" data-status="${nextCampaignStatus}">${campaignActionLabel}</button>
           <button class="btn" data-action="duplicate-campaign" data-id="${campaign.id}">Duplicate campaign</button>
-          <a class="btn btn-primary" href="#/workspace/${state.workspace.id}/messages/inbox?campaign=${campaign.id}">Open campaign inbox</a>
+          <a class="btn ${hasCampaignDrafts ? "btn-primary" : "btn-ghost"}" href="${reviewHref}">${hasCampaignDrafts ? "Review latest draft" : "Open campaign inbox"}</a>
         </div>
         <div class="campaign-next-step">
-          <strong>Need fresh prospects?</strong>
-          <span>Paste profile URLs or search for qualified leads below. Importing creates review-ready drafts in this campaign inbox.</span>
+          <strong>Start here:</strong>
+          <span>The search is prefilled from this campaign. Run it, import the best lead, then review the generated draft.</span>
         </div>
       </section>
       <section class="panel campaign-source-panel" id="campaign-lead-source">
@@ -1746,7 +1770,7 @@ function campaignDetailPage(id) {
             <span class="chip">${apifyRunLabel(run)}</span>
           </div>
         </div>
-        <form id="apify-run-form" class="apify-run-form campaign-source-form" onsubmit="return false;">
+        <form id="apify-run-form" class="apify-run-form campaign-source-form" data-campaign-id="${attrSafe(campaign.id)}" onsubmit="return false;">
           <label class="field">
             <span>Source type</span>
             <select name="actorId" id="apify-actor-select">${actorOptionsHtml}</select>
@@ -1759,18 +1783,18 @@ function campaignDetailPage(id) {
             <span>Pages</span>
             <input name="maxPages" type="number" min="1" max="5" value="${Math.min(5, Math.max(1, Number(run.maxPages || 1)))}" />
           </label>
-          <button class="btn btn-primary" id="run-apify-crawl" type="submit">Find leads</button>
+          <button class="btn btn-primary" id="run-apify-crawl" type="submit">1. Find leads</button>
         </form>
         <div class="campaign-source-helper">
           <div>
             <strong>${attrSafe(selectedActorConfig.label)}</strong>
             <div class="small muted">${attrSafe(selectedActorConfig.helper)} LinkedIn profile searches automatically use the search scraper.</div>
           </div>
-          <button class="btn btn-primary" data-action="import-prospect" data-campaign-id="${attrSafe(campaign.id)}" ${hasLiveSignals ? "" : "disabled"} title="${hasLiveSignals ? "" : "Run Find leads first; import unlocks after live rows return."}">Import top lead to inbox</button>
+          <button class="btn btn-primary" data-action="import-prospect" data-campaign-id="${attrSafe(campaign.id)}" ${hasCampaignLiveSignals ? "" : "disabled"} title="${hasCampaignLiveSignals ? "" : "Run Find leads first; import unlocks after live rows return."}">2. Import lead and review draft</button>
         </div>
         ${run.error ? `<div class="connector-notice"><strong>Run needs attention.</strong> ${attrSafe(run.error)}</div>` : ""}
         <div class="apify-signal-grid campaign-signal-grid">
-          ${renderApifySignalCards(state)}
+          ${renderApifySignalCards(hasCampaignLiveSignals ? state : { ...state, apifySignals: [] })}
         </div>
       </section>
       <section class="panel">
@@ -3345,10 +3369,13 @@ function handleProspectImport(campaignId = "") {
   }
 
   let campaignName = "";
+  let createdMessageId = "";
   updateState((draft) => {
     const signal = (Array.isArray(draft.apifySignals) ? draft.apifySignals : [])[0];
     if (!signal) return;
     const id = `p_${Date.now()}`;
+    const messageId = `m_${Date.now()}`;
+    createdMessageId = messageId;
     const targetCampaign =
       draft.campaigns.find((campaign) => campaign.id === campaignId) ||
       draft.campaigns[0] ||
@@ -3371,7 +3398,7 @@ function handleProspectImport(campaignId = "") {
       profileUrl,
     });
     draft.messages.unshift({
-      id: `m_${Date.now()}`,
+      id: messageId,
       prospectId: id,
       prospect: name,
       channel: "LinkedIn Draft",
@@ -3404,8 +3431,8 @@ function handleProspectImport(campaignId = "") {
     };
   });
   flash(`Live-data prospect imported${campaignName ? ` to ${campaignName}` : ""}`);
-  if (campaignId) {
-    setHash(`/workspace/${currentWorkspaceId()}/messages/inbox?campaign=${encodeURIComponent(campaignId)}`);
+  if (campaignId && createdMessageId) {
+    setHash(`/workspace/${currentWorkspaceId()}/messages/${createdMessageId}`);
     return;
   }
   render();
@@ -3455,6 +3482,7 @@ async function runApifyActor(form, button) {
   let actorId = form?.querySelector("[name='actorId']")?.value || apifyActorOptions[0].id;
   const target = form?.querySelector("[name='target']")?.value.trim() || APIFY_DEFAULT_TARGET;
   const maxPages = form?.querySelector("[name='maxPages']")?.value || 1;
+  const campaignId = form?.getAttribute?.("data-campaign-id") || form?.querySelector("[name='campaignId']")?.value || "";
   const previousText = button?.textContent || "Find leads";
   if (actorId === "apify/website-content-crawler" && /linkedin\.com\/in|site:linkedin\.com\/in/i.test(target)) {
     actorId = "apify/google-search-scraper";
@@ -3469,6 +3497,7 @@ async function runApifyActor(form, button) {
     draft.apifyRun = {
       ...(draft.apifyRun || INITIAL_STATE.apifyRun),
       actorId,
+      campaignId,
       target,
       status: "running",
       error: "",
@@ -3499,6 +3528,7 @@ async function runApifyActor(form, button) {
       draft.apifyRun = {
         ...(draft.apifyRun || INITIAL_STATE.apifyRun),
         actorId,
+        campaignId,
         target,
         maxPages: Math.min(5, Math.max(1, Number(maxPages) || 1)),
         status: normalizedRows.length ? "success" : "empty",
@@ -3530,6 +3560,7 @@ async function runApifyActor(form, button) {
       draft.apifyRun = {
         ...(draft.apifyRun || INITIAL_STATE.apifyRun),
         actorId,
+        campaignId,
         target,
         maxPages: Math.min(5, Math.max(1, Number(maxPages) || 1)),
         status: "error",

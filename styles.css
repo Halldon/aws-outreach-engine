@@ -1708,6 +1708,61 @@ button[type="submit"] {
   align-items: center;
 }
 
+.campaign-click-path {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.campaign-click-step {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #dfe5ed;
+  border-radius: 6px;
+  background: #fbfcfd;
+  color: #5f6672;
+}
+
+.campaign-click-step span {
+  grid-row: span 2;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid #cfd6df;
+  background: #fff;
+  color: #4b5563;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.campaign-click-step strong {
+  color: #111827;
+  line-height: 1.2;
+}
+
+.campaign-click-step small {
+  color: #6b7280;
+  line-height: 1.2;
+}
+
+.campaign-click-step.active {
+  border-color: #b8d7c4;
+  background: #f5fbf7;
+}
+
+.campaign-click-step.active span {
+  border-color: #111827;
+  background: #111827;
+  color: #fff;
+}
+
 .campaign-next-step {
   display: flex;
   align-items: center;
@@ -2972,6 +3027,10 @@ button[type="submit"] {
   .campaign-source-helper {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .campaign-click-path {
+    grid-template-columns: 1fr;
   }
 
   .apify-status-stack {
